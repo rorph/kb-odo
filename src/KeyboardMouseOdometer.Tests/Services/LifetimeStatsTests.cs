@@ -6,25 +6,22 @@ using Xunit;
 
 namespace KeyboardMouseOdometer.Tests.Services;
 
-public class LifetimeStatsTests : IDisposable
+public class LifetimeStatsTests : TestDatabaseFixture
 {
-    private readonly Mock<ILogger<DatabaseService>> _mockLogger;
-    private readonly DatabaseService _databaseService;
-    private readonly string _testDatabasePath;
-
-    public LifetimeStatsTests()
+    public LifetimeStatsTests() : base(useFileDatabase: false)
     {
-        _mockLogger = new Mock<ILogger<DatabaseService>>();
-        _testDatabasePath = Path.GetTempFileName();
-        _databaseService = new DatabaseService(_mockLogger.Object, _testDatabasePath);
-        _databaseService.InitializeAsync().Wait();
+        // Use in-memory database to avoid file locking issues in CI
+        // Don't initialize in constructor - let each test do it
     }
 
     [Fact]
     public async Task GetLifetimeStatsAsync_EmptyDatabase_ReturnsZeroStats()
     {
+        // Arrange
+        await InitializeDatabaseAsync();
+        
         // Act
-        var lifetimeStats = await _databaseService.GetLifetimeStatsAsync();
+        var lifetimeStats = await DatabaseService.GetLifetimeStatsAsync();
 
         // Assert
         Assert.Equal(0, lifetimeStats.TotalKeys);
@@ -43,6 +40,8 @@ public class LifetimeStatsTests : IDisposable
     public async Task GetLifetimeStatsAsync_WithSampleData_CalculatesCorrectTotals()
     {
         // Arrange
+        await InitializeDatabaseAsync();
+        
         var day1Stats = new DailyStats
         {
             Date = "2024-01-01",
@@ -76,12 +75,12 @@ public class LifetimeStatsTests : IDisposable
             ScrollDistance = 12.5
         };
 
-        await _databaseService.SaveDailyStatsAsync(day1Stats);
-        await _databaseService.SaveDailyStatsAsync(day2Stats);
-        await _databaseService.SaveDailyStatsAsync(day3Stats);
+        await DatabaseService.SaveDailyStatsAsync(day1Stats);
+        await DatabaseService.SaveDailyStatsAsync(day2Stats);
+        await DatabaseService.SaveDailyStatsAsync(day3Stats);
 
         // Act
-        var lifetimeStats = await _databaseService.GetLifetimeStatsAsync();
+        var lifetimeStats = await DatabaseService.GetLifetimeStatsAsync();
 
         // Assert
         Assert.Equal(4500, lifetimeStats.TotalKeys); // 1000 + 2000 + 1500
@@ -101,6 +100,8 @@ public class LifetimeStatsTests : IDisposable
     public async Task GetLifetimeStatsAsync_WithSingleDay_ShowsSinceFormat()
     {
         // Arrange
+        await InitializeDatabaseAsync();
+        
         var dayStats = new DailyStats
         {
             Date = "2024-01-01",
@@ -112,10 +113,10 @@ public class LifetimeStatsTests : IDisposable
             ScrollDistance = 10.0
         };
 
-        await _databaseService.SaveDailyStatsAsync(dayStats);
+        await DatabaseService.SaveDailyStatsAsync(dayStats);
 
         // Act
-        var lifetimeStats = await _databaseService.GetLifetimeStatsAsync();
+        var lifetimeStats = await DatabaseService.GetLifetimeStatsAsync();
 
         // Assert
         Assert.Equal("Since: 2024-01-01", lifetimeStats.GetTrackingPeriod());
@@ -126,6 +127,8 @@ public class LifetimeStatsTests : IDisposable
     public async Task GetLifetimeStatsAsync_IgnoresEmptyDays_CountsOnlyActiveDays()
     {
         // Arrange
+        await InitializeDatabaseAsync();
+        
         var activeDay = new DailyStats
         {
             Date = "2024-01-01",
@@ -148,21 +151,15 @@ public class LifetimeStatsTests : IDisposable
             ScrollDistance = 0.0
         };
 
-        await _databaseService.SaveDailyStatsAsync(activeDay);
-        await _databaseService.SaveDailyStatsAsync(emptyDay);
+        await DatabaseService.SaveDailyStatsAsync(activeDay);
+        await DatabaseService.SaveDailyStatsAsync(emptyDay);
 
         // Act
-        var lifetimeStats = await _databaseService.GetLifetimeStatsAsync();
+        var lifetimeStats = await DatabaseService.GetLifetimeStatsAsync();
 
         // Assert
         Assert.Equal(1, lifetimeStats.TotalDays); // Should only count the active day
         Assert.Equal("Since: 2024-01-01", lifetimeStats.GetTrackingPeriod()); // Should show only the active day
     }
 
-    public void Dispose()
-    {
-        _databaseService?.Dispose();
-        if (File.Exists(_testDatabasePath))
-            File.Delete(_testDatabasePath);
-    }
 }

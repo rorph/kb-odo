@@ -220,7 +220,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] SQLite database with full schema
 - [x] System tray integration
 - [x] Settings panel with configurable options
-- [x] Comprehensive test suite (133 tests)
+- [x] Comprehensive test suite (136 tests)
 - [x] Cross-platform build system
 
 ### Future Enhancements

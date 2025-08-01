@@ -49,7 +49,7 @@ public class HourlyStatsTests
     {
         // Arrange
         var logger = new LoggerFactory().CreateLogger<DatabaseService>();
-        var dbService = new DatabaseService(logger, ":memory:");
+        using var dbService = new DatabaseService(logger, ":memory:");
         await dbService.InitializeAsync();
 
         var date = "2025-08-01";
@@ -80,8 +80,5 @@ public class HourlyStatsTests
         Assert.Equal(5, hourlyStats.RightClicks);
         Assert.Equal(2, hourlyStats.MiddleClicks);
         Assert.Equal(15.5, hourlyStats.ScrollDistance);
-
-        // Cleanup
-        dbService.Dispose();
     }
 }

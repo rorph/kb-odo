@@ -16,7 +16,16 @@ public class DatabaseService : IDisposable
     public DatabaseService(ILogger<DatabaseService> logger, string databasePath = "odometer.db")
     {
         _logger = logger;
-        _connectionString = $"Data Source={databasePath}";
+        // Configure connection string with options to prevent file locking issues
+        if (databasePath == ":memory:")
+        {
+            _connectionString = $"Data Source={databasePath}";
+        }
+        else
+        {
+            // For file-based databases, use Mode=ReadWriteCreate and disable shared cache
+            _connectionString = $"Data Source={databasePath};Mode=ReadWriteCreate;Cache=Private";
+        }
     }
 
     /// <summary>
@@ -703,6 +712,42 @@ public class DatabaseService : IDisposable
 
     public void Dispose()
     {
-        _connection?.Dispose();
+        try
+        {
+            if (_connection != null)
+            {
+                // Ensure any pending transactions are completed
+                if (_connection.State == System.Data.ConnectionState.Open)
+                {
+                    // Execute PRAGMA optimize before closing
+                    try
+                    {
+                        using var cmd = _connection.CreateCommand();
+                        cmd.CommandText = "PRAGMA optimize";
+                        cmd.ExecuteNonQuery();
+                    }
+                    catch { /* Ignore errors during optimization */ }
+                    
+                    // Close the connection properly
+                    _connection.Close();
+                }
+                
+                // Dispose the connection
+                _connection.Dispose();
+                _connection = null;
+            }
+            
+            // Force SQLite to release all resources
+            SqliteConnection.ClearAllPools();
+            
+            // Trigger garbage collection to ensure finalizers run
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect(); // Second collection to handle any finalizers that created new objects
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Warning during database service disposal");
+        }
     }
 }

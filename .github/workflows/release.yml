@@ -11,6 +11,10 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+  discussions: write
+
 env:
   DOTNET_VERSION: '8.0.x'
 
@@ -39,9 +43,8 @@ jobs:
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         tag_name: v${{ steps.get_version.outputs.version }}
         name: Keyboard Mouse Odometer v${{ steps.get_version.outputs.version }}
         body: |
@@ -74,7 +77,7 @@ jobs:
           
           **🔧 Technical Highlights**
           - Self-contained single-file executable (no .NET installation required)
-          - Comprehensive test suite (133 tests)
+          - Comprehensive test suite (136 tests)
           - Performance optimized (<1% CPU usage, <80MB RAM)
           - Database migration system for seamless updates
           - Cross-platform build system
@@ -158,8 +161,7 @@ jobs:
       
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         tag_name: v${{ needs.create-release.outputs.version }}
         files: ./${{ env.ZIP_NAME }}

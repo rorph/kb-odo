@@ -1,0 +1,43 @@
+<Application x:Class="KeyboardMouseOdometer.UI.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tb="http://www.hardcodet.net/taskbar">
+    <Application.Resources>
+        <!-- Application-wide resources -->
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Include any external resource dictionaries here -->
+            </ResourceDictionary.MergedDictionaries>
+            
+            <!-- Global Styles -->
+            <Style x:Key="HeaderTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="16"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Margin" Value="0,0,0,10"/>
+            </Style>
+            
+            <Style x:Key="StatValueStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="24"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+            </Style>
+            
+            <Style x:Key="StatLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="Foreground" Value="Gray"/>
+            </Style>
+            
+            <!-- System Tray Context Menu Template -->
+            <ContextMenu x:Key="AppTaskbarContextMenu">
+                <MenuItem Header="Open Dashboard" Click="OpenDashboard_Click"/>
+                <MenuItem Header="Show Toolbar" Click="ShowToolbar_Click"/>
+                <Separator/>
+                <MenuItem Header="Pause Tracking" Click="PauseTracking_Click"/>
+                <MenuItem Header="Reset Statistics" Click="ResetStats_Click"/>
+                <Separator/>
+                <MenuItem Header="Exit" Click="Exit_Click"/>
+            </ContextMenu>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

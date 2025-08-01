@@ -1,0 +1,363 @@
+<Window x:Class="KeyboardMouseOdometer.UI.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:oxy="http://oxyplot.org/wpf"
+        Title="Keyboard + Mouse Odometer" 
+        Height="600" Width="800"
+        MinHeight="400" MinWidth="600"
+        WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Resources/app.ico">
+    
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="LightBlue" Padding="10">
+            <TextBlock Text="Keyboard + Mouse Odometer Dashboard" 
+                       Style="{StaticResource HeaderTextStyle}" 
+                       FontSize="20" 
+                       HorizontalAlignment="Center"/>
+        </Border>
+
+        <!-- Today's Stats Summary -->
+        <Border Grid.Row="1" Background="LightGray" Padding="15" Margin="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Keys Today -->
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TodayKeyCount}" Style="{StaticResource StatValueStyle}"/>
+                    <TextBlock Text="Keys Today" Style="{StaticResource StatLabelStyle}"/>
+                </StackPanel>
+
+                <!-- Mouse Distance -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TodayMouseDistance}" Style="{StaticResource StatValueStyle}"/>
+                    <TextBlock Text="Mouse Distance" Style="{StaticResource StatLabelStyle}"/>
+                </StackPanel>
+
+                <!-- Clicks Today -->
+                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TodayClickCount}" Style="{StaticResource StatValueStyle}"/>
+                    <TextBlock Text="Clicks Today" Style="{StaticResource StatLabelStyle}"/>
+                </StackPanel>
+
+                <!-- Scroll Distance -->
+                <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding TodayScrollDistance}" Style="{StaticResource StatValueStyle}"/>
+                    <TextBlock Text="Scroll Distance" Style="{StaticResource StatLabelStyle}"/>
+                </StackPanel>
+
+                <!-- Last Key -->
+                <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding LastKeyPressed}" Style="{StaticResource StatValueStyle}"/>
+                    <TextBlock Text="Last Key" Style="{StaticResource StatLabelStyle}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <TabControl Grid.Row="2" Margin="5">
+            <!-- Today Tab -->
+            <TabItem Header="Today">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Keys Chart -->
+                    <GroupBox Grid.Row="0" Header="Keys Per Hour" Margin="5">
+                        <oxy:PlotView Model="{Binding KeysPerHourChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Mouse Distance Chart -->
+                    <GroupBox Grid.Row="1" Header="Mouse Distance Per Hour" Margin="5">
+                        <oxy:PlotView Model="{Binding MouseDistancePerHourChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Scroll Distance Chart -->
+                    <GroupBox Grid.Row="2" Header="Scroll Distance Per Hour" Margin="5">
+                        <oxy:PlotView Model="{Binding ScrollDistancePerHourChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- Weekly Tab -->
+            <TabItem Header="Weekly">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Weekly Keys Chart -->
+                    <GroupBox Grid.Row="0" Header="Keys This Week" Margin="5">
+                        <oxy:PlotView Model="{Binding WeeklyKeysChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Weekly Mouse Chart -->
+                    <GroupBox Grid.Row="1" Header="Mouse Distance This Week" Margin="5">
+                        <oxy:PlotView Model="{Binding WeeklyMouseChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Weekly Scroll Chart -->
+                    <GroupBox Grid.Row="2" Header="Scroll Distance This Week" Margin="5">
+                        <oxy:PlotView Model="{Binding WeeklyScrollChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- Monthly Tab -->
+            <TabItem Header="Monthly">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Monthly Keys Chart -->
+                    <GroupBox Grid.Row="0" Header="Keys This Month" Margin="5">
+                        <oxy:PlotView Model="{Binding MonthlyKeysChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Monthly Mouse Chart -->
+                    <GroupBox Grid.Row="1" Header="Mouse Distance This Month" Margin="5">
+                        <oxy:PlotView Model="{Binding MonthlyMouseChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+
+                    <!-- Monthly Scroll Chart -->
+                    <GroupBox Grid.Row="2" Header="Scroll Distance This Month" Margin="5">
+                        <oxy:PlotView Model="{Binding MonthlyScrollChart}" Background="White" MinHeight="120"/>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+
+            <!-- Lifetime Tab -->
+            <TabItem Header="Lifetime">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20">
+                        <!-- Header -->
+                        <TextBlock Text="Lifetime Totals" 
+                                   FontSize="24" 
+                                   FontWeight="Bold" 
+                                   HorizontalAlignment="Center" 
+                                   Margin="0,0,0,10"/>
+                        
+                        <TextBlock Text="{Binding TrackingPeriod}" 
+                                   FontSize="14" 
+                                   FontStyle="Italic" 
+                                   HorizontalAlignment="Center" 
+                                   Margin="0,0,0,30"/>
+
+                        <!-- Main Stats Grid -->
+                        <Grid Margin="0,0,0,30">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Total Keys -->
+                            <Border Grid.Row="0" Grid.Column="0" 
+                                    Background="LightBlue" 
+                                    Padding="20" 
+                                    Margin="10" 
+                                    CornerRadius="8">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding LifetimeKeyCount}" 
+                                               FontSize="36" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Total Keys" 
+                                               FontSize="16" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Total Mouse Distance -->
+                            <Border Grid.Row="0" Grid.Column="1" 
+                                    Background="LightGreen" 
+                                    Padding="20" 
+                                    Margin="10" 
+                                    CornerRadius="8">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding LifetimeMouseDistance}" 
+                                               FontSize="36" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Mouse Distance" 
+                                               FontSize="16" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Total Clicks -->
+                            <Border Grid.Row="1" Grid.Column="0" 
+                                    Background="LightCoral" 
+                                    Padding="20" 
+                                    Margin="10" 
+                                    CornerRadius="8">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding LifetimeTotalClicks}" 
+                                               FontSize="36" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Total Clicks" 
+                                               FontSize="16" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Total Scroll Distance -->
+                            <Border Grid.Row="1" Grid.Column="1" 
+                                    Background="LightGoldenrodYellow" 
+                                    Padding="20" 
+                                    Margin="10" 
+                                    CornerRadius="8">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding LifetimeScrollDistance}" 
+                                               FontSize="36" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Scroll Distance" 
+                                               FontSize="16" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Click Breakdown -->
+                        <GroupBox Header="Click Breakdown" Margin="0,0,0,20">
+                            <Grid Margin="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left Clicks -->
+                                <StackPanel Grid.Column="0" HorizontalAlignment="Center" Margin="10">
+                                    <TextBlock Text="{Binding LifetimeLeftClicks}" 
+                                               FontSize="24" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Left Clicks" 
+                                               FontSize="14" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- Right Clicks -->
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Center" Margin="10">
+                                    <TextBlock Text="{Binding LifetimeRightClicks}" 
+                                               FontSize="24" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Right Clicks" 
+                                               FontSize="14" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- Middle Clicks -->
+                                <StackPanel Grid.Column="2" HorizontalAlignment="Center" Margin="10">
+                                    <TextBlock Text="{Binding LifetimeMiddleClicks}" 
+                                               FontSize="24" 
+                                               FontWeight="Bold" 
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Middle Clicks" 
+                                               FontSize="14" 
+                                               HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </GroupBox>
+
+                        <!-- Refresh Button -->
+                        <Button Content="Refresh Lifetime Stats" 
+                                Command="{Binding RefreshLifetimeStatsCommand}" 
+                                Width="200" 
+                                Height="35" 
+                                HorizontalAlignment="Center" 
+                                Margin="0,10,0,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Settings Tab -->
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Tracking Settings" Margin="0,0,0,10">
+                            <StackPanel>
+                                <CheckBox Content="Track Keystrokes" IsChecked="{Binding TrackKeystrokes}" Margin="5"/>
+                                <CheckBox Content="Track Mouse Movement" IsChecked="{Binding TrackMouseMovement}" Margin="5"/>
+                                <CheckBox Content="Track Mouse Clicks" IsChecked="{Binding TrackMouseClicks}" Margin="5"/>
+                                <CheckBox Content="Track Scroll Wheel" IsChecked="{Binding TrackScrollWheel}" Margin="5"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Display Settings" Margin="0,0,0,10">
+                            <StackPanel>
+                                <CheckBox Content="Show Toolbar" IsChecked="{Binding ShowToolbar}" Margin="5"/>
+                                <CheckBox Content="Minimize to Tray" IsChecked="{Binding MinimizeToTray}" Margin="5"/>
+                                <CheckBox Content="Start with Windows" IsChecked="{Binding StartWithWindows}" Margin="5"/>
+                                
+                                <StackPanel Orientation="Horizontal" Margin="5">
+                                    <TextBlock Text="Distance Unit:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <ComboBox SelectedValue="{Binding DistanceUnit}" SelectedValuePath="Tag" Width="120">
+                                        <ComboBoxItem Content="Metric" Tag="metric"/>
+                                        <ComboBoxItem Content="Imperial" Tag="imperial"/>
+                                        <ComboBoxItem Content="Pixels" Tag="pixels"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Data Management" Margin="0,0,0,10">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="5">
+                                    <TextBlock Text="Keep data for:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox Text="{Binding DatabaseRetentionDays}" Width="60" Margin="0,0,5,0"/>
+                                    <TextBlock Text="days (0 = never delete)" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                
+                                <Button Content="Reset Today's Statistics" 
+                                        Command="{Binding ResetTodayStatsCommand}" 
+                                        Margin="5" Width="200" HorizontalAlignment="Left"/>
+                                
+                                <Button Content="Export Data..." 
+                                        Command="{Binding ExportDataCommand}" 
+                                        Margin="5" Width="200" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <Button Content="Save Settings" 
+                                Command="{Binding SaveSettingsCommand}" 
+                                Margin="5" Width="120" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

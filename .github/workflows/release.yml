@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.0.0)'
+        required: true
+        type: string
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  create-release:
+    runs-on: windows-latest
+    
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Get version
+      id: get_version
+      run: |
+        if ($env:GITHUB_EVENT_NAME -eq 'push') {
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+        } else {
+          $version = '${{ github.event.inputs.version }}'
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.get_version.outputs.version }}
+        name: Keyboard Mouse Odometer v${{ steps.get_version.outputs.version }}
+        body: |
+          ## Keyboard Mouse Odometer v${{ steps.get_version.outputs.version }}
+          
+          A comprehensive Windows desktop application that tracks your keyboard and mouse usage statistics, providing detailed insights into your daily computer usage patterns.
+          
+          ### ✨ Key Features
+          
+          **📊 Comprehensive Input Tracking**
+          - Real-time keypress tracking with individual key identification
+          - Mouse movement distance with smart auto-scaling units (mm/cm/m/km/Mm, in/ft/mi, px/Kpx/Mpx/Gpx)
+          - Mouse click tracking (left/right/middle button separately)
+          - Scroll wheel distance measurement
+          - System-wide global input hooks
+          
+          **🖥️ Advanced User Interface**
+          - **Transparent Resizable Toolbar**: Semi-transparent floating toolbar with real-time stats
+          - **Comprehensive Dashboard**: Tabbed interface with Today/Weekly/Monthly/Lifetime/Settings views
+          - **Interactive Charts**: OxyPlot-powered charts showing usage patterns throughout the day
+          - **System Tray Integration**: Full system tray operation with context menu
+          - **Customizable Settings**: Configurable tracking options and display preferences
+          
+          **🗄️ Robust Data Management**
+          - SQLite database with comprehensive schema (daily_stats and hourly_stats tables)
+          - Hourly statistics for detailed intra-day patterns
+          - Lifetime cumulative statistics with tracking period
+          - Automatic data retention management
+          - DPI-aware distance calculations for accurate measurements
+          
+          **🔧 Technical Highlights**
+          - Self-contained single-file executable (no .NET installation required)
+          - Comprehensive test suite (133 tests)
+          - Performance optimized (<1% CPU usage, <80MB RAM)
+          - Database migration system for seamless updates
+          - Cross-platform build system
+          
+          ### 📦 Installation
+          1. Download the appropriate ZIP file for your system architecture:
+             - `win-x64`: For 64-bit Windows systems (recommended)
+             - `win-x86`: For 32-bit Windows systems (legacy)
+             - `win-arm64`: For ARM64 Windows devices (Surface Pro X, etc.)
+          2. Extract to your preferred location
+          3. Run `KeyboardMouseOdometer.UI.exe`
+          4. The application will start in your system tray
+          
+          ### 💻 System Requirements
+          - Windows 10 version 1607+ or Windows Server 2016+
+          - 512 MB RAM minimum, 1 GB recommended
+          - 100 MB disk space for extraction and operation
+          - Administrator privileges (for global input hooks)
+          
+          ### 🚀 What's New in This Release
+          - Transparent resizable toolbar with real-time statistics
+          - Lifetime statistics tab showing cumulative usage data
+          - Auto-scaling distance units for better readability
+          - Scroll wheel tracking with distance estimation
+          - Interactive charts for hourly usage patterns
+          - Enhanced settings panel with comprehensive options
+          - Performance optimizations and bug fixes
+          
+          ### 📚 Documentation
+          - **Quick Start**: See QUICK_START.md for immediate setup
+          - **Troubleshooting**: See TROUBLESHOOTING.md for common issues
+          - **Deployment**: See DEPLOYMENT.md for enterprise deployment
+          - **Development**: See README.md for development information
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+
+  build-and-upload:
+    needs: create-release
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        runtime: [win-x64, win-x86, win-arm64]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore KeyboardMouseOdometer.sln
+      
+    - name: Run tests
+      run: dotnet test KeyboardMouseOdometer.sln --configuration Release --verbosity normal --logger trx
+      
+    - name: Publish for ${{ matrix.runtime }}
+      run: |
+        dotnet publish src/KeyboardMouseOdometer.UI/KeyboardMouseOdometer.UI.csproj `
+          -c Release `
+          -r ${{ matrix.runtime }} `
+          --self-contained true `
+          --output ./publish/${{ matrix.runtime }} `
+          -p:PublishSingleFile=true `
+          -p:IncludeNativeLibrariesForSelfExtract=true `
+          -p:AssemblyVersion=${{ needs.create-release.outputs.version }} `
+          -p:FileVersion=${{ needs.create-release.outputs.version }} `
+          -p:DebugType=None `
+          -p:DebugSymbols=false `
+          -p:EnableCompressionInSingleFile=true
+          
+    - name: Create ZIP archive
+      run: |
+        $zipName = "KeyboardMouseOdometer-v${{ needs.create-release.outputs.version }}-${{ matrix.runtime }}.zip"
+        Compress-Archive -Path ./publish/${{ matrix.runtime }}/* -DestinationPath $zipName
+        echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+      shell: pwsh
+      
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ needs.create-release.outputs.version }}
+        files: ./${{ env.ZIP_NAME }}

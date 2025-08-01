@@ -31,19 +31,12 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
 
 ## Screenshots
 
-### System Tray Menu
-```
-[Icon] Keyboard+Mouse Odometer
--------------------------------
-Open Dashboard
-Pause Tracking
-Exit
-```
+### Dashboard
+![Dashboard](./dashboard.png)
 
 ### Transparent Resizable Toolbar
-```
-KM Odometer | Key: W | Keys: 1,254 | Mouse: 1.32 km | Scroll: 45.2 m
-```
+
+![Toolbar](./toolbar.png)
 
 ## Requirements
 

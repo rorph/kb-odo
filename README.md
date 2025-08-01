@@ -2,7 +2,7 @@
 
 A Windows desktop application that tracks your keyboard and mouse usage statistics, providing insights into your daily computer usage patterns.
 
-![Build Status](https://github.com/yourusername/keyboard-mouse-odometer/actions/workflows/build-and-test.yml/badge.svg)
+![Build Status](https://github.com/rorph/kb-odo/actions/workflows/build-and-test.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4.svg)
 
@@ -55,7 +55,7 @@ KM Odometer | Key: W | Keys: 1,254 | Mouse: 1.32 km | Scroll: 45.2 m
 
 ### From Release (Recommended)
 
-1. Download the latest release from the [Releases](https://github.com/yourusername/keyboard-mouse-odometer/releases) page
+1. Download the latest release from the [Releases](https://github.com/rorph/kb-odo/releases) page
 2. Extract the ZIP file to your preferred location
 3. Run `KeyboardMouseOdometer.UI.exe`
 4. The application will start in your system tray
@@ -64,7 +64,7 @@ KM Odometer | Key: W | Keys: 1,254 | Mouse: 1.32 km | Scroll: 45.2 m
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/keyboard-mouse-odometer.git
+   git clone https://github.com/rorph/kb-odo.git
    cd keyboard-mouse-odometer
    ```
 

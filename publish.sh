@@ -9,7 +9,7 @@ echo "======================================"
 echo "Publishing Keyboard Mouse Odometer"
 echo "======================================"
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 OUTPUT_DIR="./publish"
 RUNTIME="win-x64"
 

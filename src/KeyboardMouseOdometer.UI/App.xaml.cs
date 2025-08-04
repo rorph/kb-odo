@@ -1,5 +1,6 @@
 using KeyboardMouseOdometer.Core.Services;
 using KeyboardMouseOdometer.Core.Models;
+using KeyboardMouseOdometer.Core.Interfaces;
 using KeyboardMouseOdometer.UI.ViewModels;
 using KeyboardMouseOdometer.UI.Views;
 using KeyboardMouseOdometer.UI.Services;
@@ -28,6 +29,7 @@ public partial class App : Application
     private ToolbarWindow? _toolbarWindow;
     private GlobalHookService? _hookService;
     private DataLoggerService? _dataLoggerService;
+    private ThemeManager? _themeManager;
     private ILogger<App>? _logger;
     private readonly StringBuilder _startupLog = new();
     private bool _isDiagnosticMode = false;
@@ -198,16 +200,29 @@ public partial class App : Application
                 services.AddSingleton(config);
 
                 // Core services
-                services.AddSingleton<DatabaseService>();
+                services.AddSingleton<DatabaseService>(provider =>
+                {
+                    var logger = provider.GetRequiredService<ILogger<DatabaseService>>();
+                    var databasePath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "KeyboardMouseOdometer",
+                        "odometer.db");
+                    return new DatabaseService(logger, databasePath);
+                });
                 services.AddSingleton<InputMonitoringService>();
                 services.AddSingleton<DataLoggerService>();
 
+                // Key code mapping
+                services.AddSingleton<IKeyCodeMapper, WpfKeyCodeMapper>();
+
                 // UI services
                 services.AddSingleton<GlobalHookService>();
+                services.AddSingleton<ThemeManager>();
 
                 // ViewModels
                 services.AddTransient<MainWindowViewModel>();
                 services.AddTransient<ToolbarViewModel>();
+                services.AddTransient<HeatmapViewModel>();
 
                 // Views
                 services.AddTransient<MainWindow>();
@@ -248,6 +263,12 @@ public partial class App : Application
             _dataLoggerService = _host.Services.GetRequiredService<DataLoggerService>();
             await _dataLoggerService.InitializeAsync();
             LogStartupStep("Data logger service initialized");
+
+            LogStartupStep("Initializing theme manager");
+            // Initialize theme manager
+            _themeManager = _host.Services.GetRequiredService<ThemeManager>();
+            _themeManager.Initialize();
+            LogStartupStep($"Theme manager initialized with {_themeManager.CurrentTheme} theme");
         }
         catch (Exception ex)
         {
@@ -390,7 +411,7 @@ public partial class App : Application
             
             // Configure interaction behavior
             _taskbarIcon.MenuActivation = Hardcodet.Wpf.TaskbarNotification.PopupActivationMode.RightClick;
-            _taskbarIcon.LeftClickCommand = new RelayCommand(() => OpenDashboard_Click(this, new RoutedEventArgs()));
+            _taskbarIcon.LeftClickCommand = new KeyboardMouseOdometer.UI.ViewModels.RelayCommand(() => OpenDashboard_Click(this, new RoutedEventArgs()));
             
             // Get context menu resource
             try

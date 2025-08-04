@@ -197,4 +197,154 @@ public class StatisticsService : IStatisticsService
         
         _logger.LogInformation("Statistics reset");
     }
+
+    /// <summary>
+    /// Calculate heatmap data from key statistics with normalized heat levels
+    /// </summary>
+    public static List<KeyboardKey> CalculateHeatmapData(Dictionary<string, long> keyStats, List<KeyboardKey> keyboardLayout)
+    {
+        if (keyStats == null || keyStats.Count == 0 || keyboardLayout == null)
+        {
+            return keyboardLayout ?? new List<KeyboardKey>();
+        }
+
+        // Find max count for normalization (excluding outliers)
+        var sortedCounts = keyStats.Values.Where(v => v > 0).OrderBy(v => v).ToList();
+        if (sortedCounts.Count == 0)
+        {
+            return keyboardLayout;
+        }
+
+        // Use 95th percentile as max to handle outliers (like Space key)
+        var percentileIndex = Math.Min((int)(sortedCounts.Count * 0.95), sortedCounts.Count - 1);
+        var maxCount = Math.Max(sortedCounts[percentileIndex], 1);
+
+        // Create a lookup for quick access using KeyName for database matching
+        var keyLookup = keyboardLayout.ToDictionary(k => k.KeyName, k => k);
+
+        // Also create alternative lookups for better key matching
+        var alternativeKeyLookup = new Dictionary<string, KeyboardKey>();
+        foreach (var kbKey in keyboardLayout)
+        {
+            // Add alternative names for numpad keys
+            if (kbKey.KeyName == "Num0") alternativeKeyLookup["NumPad0"] = kbKey;
+            if (kbKey.KeyName == "Num1") alternativeKeyLookup["NumPad1"] = kbKey;
+            if (kbKey.KeyName == "Num2") alternativeKeyLookup["NumPad2"] = kbKey;
+            if (kbKey.KeyName == "Num3") alternativeKeyLookup["NumPad3"] = kbKey;
+            if (kbKey.KeyName == "Num4") alternativeKeyLookup["NumPad4"] = kbKey;
+            if (kbKey.KeyName == "Num5") alternativeKeyLookup["NumPad5"] = kbKey;
+            if (kbKey.KeyName == "Num6") alternativeKeyLookup["NumPad6"] = kbKey;
+            if (kbKey.KeyName == "Num7") alternativeKeyLookup["NumPad7"] = kbKey;
+            if (kbKey.KeyName == "Num8") alternativeKeyLookup["NumPad8"] = kbKey;
+            if (kbKey.KeyName == "Num9") alternativeKeyLookup["NumPad9"] = kbKey;
+            if (kbKey.KeyName == "Num+") alternativeKeyLookup["Add"] = kbKey;
+            if (kbKey.KeyName == "Num-") alternativeKeyLookup["Subtract"] = kbKey;
+            if (kbKey.KeyName == "Num*") alternativeKeyLookup["Multiply"] = kbKey;
+            if (kbKey.KeyName == "Num/") alternativeKeyLookup["Divide"] = kbKey;
+            if (kbKey.KeyName == "Num.") alternativeKeyLookup["Decimal"] = kbKey;
+        }
+
+        // Update key press counts and calculate heat levels
+        foreach (var kvp in keyStats)
+        {
+            KeyboardKey? key = null;
+            
+            // Debug logging for numpad keys
+            if (kvp.Key.StartsWith("Num"))
+            {
+                Console.WriteLine($"[DEBUG] Processing key stat: {kvp.Key} = {kvp.Value}");
+            }
+            
+            // Try primary lookup first
+            if (keyLookup.TryGetValue(kvp.Key, out key))
+            {
+                key.PressCount = kvp.Value;
+                // Use logarithmic scale for better heat distribution
+                key.HeatLevel = CalculateLogHeatLevel(kvp.Value, maxCount);
+                
+                if (kvp.Key.StartsWith("Num"))
+                {
+                    Console.WriteLine($"[DEBUG] Found key in primary lookup: {kvp.Key} -> {key.DisplayText}");
+                }
+            }
+            // Try alternative lookup if primary fails
+            else if (alternativeKeyLookup.TryGetValue(kvp.Key, out key))
+            {
+                key.PressCount = kvp.Value;
+                // Use logarithmic scale for better heat distribution
+                key.HeatLevel = CalculateLogHeatLevel(kvp.Value, maxCount);
+                
+                if (kvp.Key.StartsWith("Num"))
+                {
+                    Console.WriteLine($"[DEBUG] Found key in alternative lookup: {kvp.Key} -> {key.DisplayText}");
+                }
+            }
+            else if (kvp.Key.StartsWith("Num"))
+            {
+                Console.WriteLine($"[DEBUG] Key not found in any lookup: {kvp.Key}");
+                Console.WriteLine($"[DEBUG] Available keys in keyLookup: {string.Join(", ", keyLookup.Keys.Where(k => k.StartsWith("Num")))}");
+                Console.WriteLine($"[DEBUG] Available keys in alternativeKeyLookup: {string.Join(", ", alternativeKeyLookup.Keys.Where(k => k.StartsWith("Num")))}");
+            }
+        }
+
+        return keyboardLayout;
+    }
+
+    /// <summary>
+    /// Calculate logarithmic heat level for better visual distribution
+    /// </summary>
+    private static double CalculateLogHeatLevel(long count, long maxCount)
+    {
+        if (count <= 0) return 0.0;
+        if (count >= maxCount) return 1.0;
+
+        // Use log scale: log(count + 1) / log(maxCount + 1)
+        var logCount = Math.Log(count + 1);
+        var logMax = Math.Log(maxCount + 1);
+        
+        return Math.Min(1.0, logCount / logMax);
+    }
+
+    /// <summary>
+    /// Calculate color from heat level using gradient (Blue -> Cyan -> Green -> Yellow -> Orange -> Red)
+    /// </summary>
+    public static HeatmapColor CalculateHeatColor(double heatLevel)
+    {
+        return HeatmapColor.CalculateHeatColor(heatLevel);
+    }
+
+    /// <summary>
+    /// Get top N most frequently used keys with percentages
+    /// </summary>
+    public static List<(string Key, long Count, double Percentage)> GetTopKeysWithPercentage(
+        Dictionary<string, long> keyStats, int topN = 10)
+    {
+        if (keyStats == null || keyStats.Count == 0)
+            return new List<(string, long, double)>();
+
+        var totalCount = keyStats.Values.Sum();
+        if (totalCount == 0)
+            return new List<(string, long, double)>();
+
+        return keyStats
+            .OrderByDescending(kvp => kvp.Value)
+            .Take(topN)
+            .Select(kvp => (
+                Key: kvp.Key,
+                Count: kvp.Value,
+                Percentage: (double)kvp.Value / totalCount * 100
+            ))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Calculate typing speed (keys per minute) for a time period
+    /// </summary>
+    public static double CalculateTypingSpeed(long keyCount, TimeSpan duration)
+    {
+        if (duration.TotalMinutes <= 0)
+            return 0;
+
+        return keyCount / duration.TotalMinutes;
+    }
 }

@@ -1,4 +1,6 @@
 using KeyboardMouseOdometer.Core.Models;
+using KeyboardMouseOdometer.Core.Utils;
+using KeyboardMouseOdometer.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 
@@ -16,12 +18,14 @@ public class InputMonitoringService
     public event EventHandler<MouseScrollEventArgs>? MouseScrolled;
 
     private readonly ILogger<InputMonitoringService> _logger;
+    private readonly IKeyCodeMapper _keyCodeMapper;
     private MousePosition? _lastMousePosition;
     private DateTime _lastMouseMoveTime = DateTime.Now;
 
-    public InputMonitoringService(ILogger<InputMonitoringService> logger)
+    public InputMonitoringService(ILogger<InputMonitoringService> logger, IKeyCodeMapper keyCodeMapper)
     {
         _logger = logger;
+        _keyCodeMapper = keyCodeMapper;
     }
 
     /// <summary>
@@ -31,9 +35,12 @@ public class InputMonitoringService
     {
         if (isKeyDown) // Only track key down events to avoid duplicates
         {
+            var keyIdentifier = _keyCodeMapper.GetKeyName(keyCode);
+            
             var args = new KeyboardEventArgs
             {
                 KeyCode = keyCode,
+                KeyIdentifier = keyIdentifier,
                 Timestamp = DateTime.Now
             };
 
@@ -120,6 +127,7 @@ public class InputMonitoringService
 public class KeyboardEventArgs : EventArgs
 {
     public string KeyCode { get; set; } = string.Empty;
+    public string KeyIdentifier { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
 }
 

@@ -1,0 +1,83 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- Light Theme Colors -->
+    
+    <!-- Main Window Colors -->
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="WindowForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="WindowBorderBrush" Color="#FFCCCCCC"/>
+    
+    <!-- Header Colors -->
+    <SolidColorBrush x:Key="HeaderBackgroundBrush" Color="#FF0078D4"/>
+    <SolidColorBrush x:Key="HeaderForegroundBrush" Color="#FFFFFFFF"/>
+    
+    <!-- Content Area Colors -->
+    <SolidColorBrush x:Key="ContentBackgroundBrush" Color="#FFF5F5F5"/>
+    <SolidColorBrush x:Key="ContentForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="ContentBorderBrush" Color="#FFE0E0E0"/>
+    
+    <!-- Tab Control Colors -->
+    <SolidColorBrush x:Key="TabBackgroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="TabForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="TabSelectedBackgroundBrush" Color="#FF0078D4"/>
+    <SolidColorBrush x:Key="TabSelectedForegroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="TabBorderBrush" Color="#FFCCCCCC"/>
+    
+    <!-- Chart Colors -->
+    <SolidColorBrush x:Key="ChartBackgroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="ChartGridLineBrush" Color="#FFE0E0E0"/>
+    <SolidColorBrush x:Key="ChartAxisBrush" Color="#FF666666"/>
+    <SolidColorBrush x:Key="ChartTextBrush" Color="#FF333333"/>
+    
+    <!-- Button Colors -->
+    <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="ButtonForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#FFCCCCCC"/>
+    <SolidColorBrush x:Key="ButtonHoverBackgroundBrush" Color="#FFE0E0E0"/>
+    <SolidColorBrush x:Key="ButtonPressedBackgroundBrush" Color="#FFD0D0D0"/>
+    
+    <!-- TextBox Colors -->
+    <SolidColorBrush x:Key="TextBoxBackgroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="TextBoxForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="TextBoxBorderBrush" Color="#FFCCCCCC"/>
+    <SolidColorBrush x:Key="TextBoxDisabledBackgroundBrush" Color="#FFF5F5F5"/>
+    
+    <!-- Statistics Colors -->
+    <SolidColorBrush x:Key="StatValueBrush" Color="#FF0078D4"/>
+    <SolidColorBrush x:Key="StatLabelBrush" Color="#FF666666"/>
+    
+    <!-- Accent Colors -->
+    <SolidColorBrush x:Key="AccentColorBrush" Color="#FF0078D4"/>
+    <SolidColorBrush x:Key="AccentColorLightBrush" Color="#FFE3F2FD"/>  <!-- Light blue background -->
+    <SolidColorBrush x:Key="AccentColorDarkBrush" Color="#FF005A9E"/>
+    
+    <!-- Status Colors (with good contrast for dark text) -->
+    <SolidColorBrush x:Key="SuccessBrush" Color="#FFE8F5E9"/>  <!-- Light green background -->
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFFFF3E0"/>  <!-- Light amber background -->
+    <SolidColorBrush x:Key="ErrorBrush" Color="#FFFFEBEE"/>   <!-- Light red background -->
+    <SolidColorBrush x:Key="InfoBrush" Color="#FFE3F2FD"/>    <!-- Light blue background -->
+    
+    <!-- Separator Colors -->
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#FFE0E0E0"/>
+    
+    <!-- ScrollBar Colors -->
+    <SolidColorBrush x:Key="ScrollBarBackgroundBrush" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#FFCCCCCC"/>
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#FFAAAAAA"/>
+    
+    <!-- Toolbar Colors (for floating toolbar) -->
+    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#F0FFFFFF"/>
+    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#FF000000"/>
+    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#FFCCCCCC"/>
+    
+    <!-- Heatmap Colors -->
+    <SolidColorBrush x:Key="HeatmapBackgroundBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="HeatmapKeyBackgroundBrush" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="HeatmapKeyBorderBrush" Color="#FFCCCCCC"/>
+    <SolidColorBrush x:Key="HeatmapKeyTextBrush" Color="#FF333333"/>
+    
+    <!-- Shadow Effects -->
+    <Color x:Key="ShadowColor">#40000000</Color>
+    
+</ResourceDictionary>

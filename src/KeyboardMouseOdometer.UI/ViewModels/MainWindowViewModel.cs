@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using KeyboardMouseOdometer.Core.Models;
 using KeyboardMouseOdometer.Core.Services;
 using KeyboardMouseOdometer.Core.Utils;
+using KeyboardMouseOdometer.UI.Services;
 using Microsoft.Extensions.Logging;
 using OxyPlot;
 using OxyPlot.Axes;
@@ -19,6 +20,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly DatabaseService _databaseService;
     private readonly DataLoggerService _dataLoggerService;
     private readonly Core.Models.Configuration _configuration;
+    private readonly ThemeManager _themeManager;
     private readonly Timer _chartUpdateTimer;
     private DateTime _lastChartUpdate = DateTime.MinValue;
 
@@ -117,16 +119,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string trackingPeriod = "No data available";
 
+    [ObservableProperty]
+    private HeatmapViewModel? heatmapViewModel;
+
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
         DatabaseService databaseService,
         DataLoggerService dataLoggerService,
-        Core.Models.Configuration configuration)
+        Core.Models.Configuration configuration,
+        HeatmapViewModel heatmapViewModel,
+        ThemeManager themeManager)
     {
         _logger = logger;
         _databaseService = databaseService;
         _dataLoggerService = dataLoggerService;
         _configuration = configuration;
+        _themeManager = themeManager;
+        HeatmapViewModel = heatmapViewModel;
 
         // Load settings
         LoadSettings();
@@ -134,6 +143,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Subscribe to data updates
         _dataLoggerService.StatsUpdated += OnStatsUpdated;
         _dataLoggerService.LastKeyChanged += OnLastKeyChanged;
+        
+        // Subscribe to theme changes
+        _themeManager.ThemeChanged += OnThemeChanged;
 
         // Initialize charts
         InitializeCharts();
@@ -204,26 +216,53 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private PlotModel CreateHourlyChart(string title, string yAxisTitle)
     {
-        var plotModel = new PlotModel { Title = title };
+        var plotModel = new PlotModel 
+        { 
+            Title = title,
+            Background = OxyColors.Transparent,
+            PlotAreaBackground = OxyColors.Transparent
+        };
+        
+        // Get theme-appropriate colors
+        var isDarkTheme = _themeManager.CurrentTheme == AppTheme.Dark;
+        var textColor = isDarkTheme ? OxyColor.FromRgb(204, 204, 204) : OxyColor.FromRgb(51, 51, 51);
+        var gridLineColor = isDarkTheme ? OxyColor.FromRgb(63, 63, 63) : OxyColor.FromRgb(224, 224, 224);
+        var lineColor = isDarkTheme ? OxyColor.FromRgb(64, 160, 255) : OxyColor.FromRgb(0, 120, 212);
+        
+        plotModel.TextColor = textColor;
+        plotModel.PlotAreaBorderColor = gridLineColor;
         
         plotModel.Axes.Add(new DateTimeAxis
         {
             Position = AxisPosition.Bottom,
             StringFormat = "HH:mm",
-            Title = "Time"
+            Title = "Time",
+            TextColor = textColor,
+            TicklineColor = gridLineColor,
+            MajorGridlineStyle = LineStyle.Solid,
+            MajorGridlineColor = gridLineColor,
+            MinorGridlineStyle = LineStyle.None
         });
         
         plotModel.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Left,
-            Title = yAxisTitle
+            Title = yAxisTitle,
+            TextColor = textColor,
+            TicklineColor = gridLineColor,
+            MajorGridlineStyle = LineStyle.Solid,
+            MajorGridlineColor = gridLineColor,
+            MinorGridlineStyle = LineStyle.None
         });
 
         var series = new LineSeries
         {
             Title = yAxisTitle,
             MarkerType = MarkerType.Circle,
-            MarkerSize = 3
+            MarkerSize = 3,
+            Color = lineColor,
+            StrokeThickness = 2,
+            MarkerFill = lineColor
         };
         
         plotModel.Series.Add(series);
@@ -232,26 +271,53 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private PlotModel CreateDailyChart(string title, string yAxisTitle)
     {
-        var plotModel = new PlotModel { Title = title };
+        var plotModel = new PlotModel 
+        { 
+            Title = title,
+            Background = OxyColors.Transparent,
+            PlotAreaBackground = OxyColors.Transparent
+        };
+        
+        // Get theme-appropriate colors
+        var isDarkTheme = _themeManager.CurrentTheme == AppTheme.Dark;
+        var textColor = isDarkTheme ? OxyColor.FromRgb(204, 204, 204) : OxyColor.FromRgb(51, 51, 51);
+        var gridLineColor = isDarkTheme ? OxyColor.FromRgb(63, 63, 63) : OxyColor.FromRgb(224, 224, 224);
+        var lineColor = isDarkTheme ? OxyColor.FromRgb(64, 160, 255) : OxyColor.FromRgb(0, 120, 212);
+        
+        plotModel.TextColor = textColor;
+        plotModel.PlotAreaBorderColor = gridLineColor;
         
         plotModel.Axes.Add(new DateTimeAxis
         {
             Position = AxisPosition.Bottom,
             StringFormat = "MM/dd",
-            Title = "Date"
+            Title = "Date",
+            TextColor = textColor,
+            TicklineColor = gridLineColor,
+            MajorGridlineStyle = LineStyle.Solid,
+            MajorGridlineColor = gridLineColor,
+            MinorGridlineStyle = LineStyle.None
         });
         
         plotModel.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Left,
-            Title = yAxisTitle
+            Title = yAxisTitle,
+            TextColor = textColor,
+            TicklineColor = gridLineColor,
+            MajorGridlineStyle = LineStyle.Solid,
+            MajorGridlineColor = gridLineColor,
+            MinorGridlineStyle = LineStyle.None
         });
 
         var series = new LineSeries
         {
             Title = yAxisTitle,
             MarkerType = MarkerType.Circle,
-            MarkerSize = 4
+            MarkerSize = 4,
+            Color = lineColor,
+            StrokeThickness = 2,
+            MarkerFill = lineColor
         };
         
         plotModel.Series.Add(series);
@@ -551,7 +617,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task RefreshLifetimeStatsAsync()
     {
+        // Flush pending data to database first
+        await _dataLoggerService.FlushAsync();
         await LoadLifetimeStatsAsync();
+    }
+
+    private void OnThemeChanged(object? sender, AppTheme newTheme)
+    {
+        // Reinitialize charts with new theme colors
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            InitializeCharts();
+        });
     }
 
     /// <summary>
@@ -565,6 +642,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _dataLoggerService.StatsUpdated -= OnStatsUpdated;
             _dataLoggerService.LastKeyChanged -= OnLastKeyChanged;
+        }
+        
+        if (_themeManager != null)
+        {
+            _themeManager.ThemeChanged -= OnThemeChanged;
         }
     }
 }

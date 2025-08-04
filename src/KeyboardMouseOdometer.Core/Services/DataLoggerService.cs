@@ -1,4 +1,5 @@
 using KeyboardMouseOdometer.Core.Models;
+using KeyboardMouseOdometer.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -13,6 +14,7 @@ public class DataLoggerService : IDisposable
     private readonly ILogger<DataLoggerService> _logger;
     private readonly DatabaseService _databaseService;
     private readonly Models.Configuration _configuration;
+    private readonly IKeyCodeMapper _keyCodeMapper;
     private readonly Timer _saveTimer;
     private readonly Timer _midnightTimer;
     private readonly Timer _uiUpdateTimer;
@@ -25,6 +27,7 @@ public class DataLoggerService : IDisposable
 
     // Thread-safe collections for detailed tracking
     private readonly ConcurrentDictionary<string, int> _keyFrequency = new();
+    private readonly ConcurrentDictionary<string, int> _currentHourKeyStats = new(); // For heatmap tracking
     private readonly ConcurrentQueue<KeyMouseEvent> _pendingRawEvents = new();
 
     // Performance throttling
@@ -38,11 +41,13 @@ public class DataLoggerService : IDisposable
     public DataLoggerService(
         ILogger<DataLoggerService> logger, 
         DatabaseService databaseService, 
-        Models.Configuration configuration)
+        Models.Configuration configuration,
+        IKeyCodeMapper keyCodeMapper)
     {
         _logger = logger;
         _databaseService = databaseService;
         _configuration = configuration;
+        _keyCodeMapper = keyCodeMapper;
 
         // Initialize today's stats
         _todayStats = DailyStats.CreateForToday();
@@ -108,6 +113,16 @@ public class DataLoggerService : IDisposable
 
         // Track key frequency
         _keyFrequency.AddOrUpdate(keyCode, 1, (key, count) => count + 1);
+        
+        // Track key stats for heatmap (using human-readable key identifier)
+        var keyIdentifier = _keyCodeMapper.GetKeyName(keyCode);
+        _currentHourKeyStats.AddOrUpdate(keyIdentifier, 1, (key, count) => count + 1);
+        
+        // Debug logging for numpad keys
+        if (keyCode.StartsWith("NumPad") || keyIdentifier.StartsWith("Num"))
+        {
+            _logger.LogDebug("NumPad key logged - Raw: {RawKey}, Identifier: {KeyId}", keyCode, keyIdentifier);
+        }
 
         // Log raw event if enabled
         if (_configuration.EnableRawEventLogging)
@@ -124,6 +139,86 @@ public class DataLoggerService : IDisposable
         _statsChanged = true;
         
         // Removed trace logging to reduce CPU usage
+    }
+
+    /// <summary>
+    /// Log a keyboard event with key identifier (for heatmap feature)
+    /// </summary>
+    public void LogKeyPress(string keyCode, string keyIdentifier)
+    {
+        lock (_statsLock)
+        {
+            _todayStats.KeyCount++;
+            _currentHourStats.KeyCount++;
+            _lastKeyPressed = keyCode;
+        }
+
+        // Track key frequency
+        _keyFrequency.AddOrUpdate(keyCode, 1, (key, count) => count + 1);
+        
+        // Track key stats for heatmap using provided identifier
+        _currentHourKeyStats.AddOrUpdate(keyIdentifier, 1, (key, count) => count + 1);
+
+        // Log raw event if enabled
+        if (_configuration.EnableRawEventLogging)
+        {
+            _pendingRawEvents.Enqueue(new KeyMouseEvent
+            {
+                Timestamp = DateTime.Now,
+                EventType = "key_down",
+                Key = _configuration.LogDetailedKeystrokes ? keyCode : "key" // Privacy consideration
+            });
+        }
+
+        LastKeyChanged?.Invoke(this, keyCode);
+        _statsChanged = true;
+        
+        // Removed trace logging to reduce CPU usage
+    }
+
+    /// <summary>
+    /// Log a generic input event (for compatibility)
+    /// </summary>
+    public void LogInputEvent(InputEvent inputEvent)
+    {
+        switch (inputEvent.EventType)
+        {
+            case InputEventType.KeyDown: // Handles both KeyDown and KeyPress (alias)
+                if (!string.IsNullOrEmpty(inputEvent.KeyIdentifier))
+                {
+                    LogKeyPress(inputEvent.KeyCode ?? inputEvent.KeyIdentifier, inputEvent.KeyIdentifier);
+                }
+                else if (!string.IsNullOrEmpty(inputEvent.KeyCode))
+                {
+                    LogKeyPress(inputEvent.KeyCode);
+                }
+                break;
+            case InputEventType.MouseMove:
+                // Calculate distance if coordinates are provided
+                if (inputEvent.X != 0 || inputEvent.Y != 0)
+                {
+                    var distance = Math.Sqrt(inputEvent.X * inputEvent.X + inputEvent.Y * inputEvent.Y);
+                    LogMouseMove(distance);
+                }
+                break;
+            case InputEventType.MouseClick:
+                if (inputEvent.MouseButton.HasValue)
+                {
+                    LogMouseClick(inputEvent.MouseButton.Value);
+                }
+                break;
+            case InputEventType.MouseWheel:
+                LogMouseScroll(inputEvent.WheelDelta);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Flush pending data to database (for compatibility)
+    /// </summary>
+    public async Task FlushAsync()
+    {
+        await SavePendingDataAsync();
     }
 
     /// <summary>
@@ -383,6 +478,7 @@ public class DataLoggerService : IDisposable
             }
 
             _keyFrequency.Clear();
+            _currentHourKeyStats.Clear();
 
             // Clean up old data if needed
             if (_configuration.DatabaseRetentionDays > 0)
@@ -407,6 +503,8 @@ public class DataLoggerService : IDisposable
         var currentHour = DateTime.Now.Hour;
         
         HourlyStats hourStatsToSave;
+        Dictionary<string, int>? keyStatsToSave = null;
+        
         lock (_statsLock)
         {
             // If hour changed, save current hour stats and create new hour stats
@@ -423,6 +521,13 @@ public class DataLoggerService : IDisposable
                     MiddleClicks = _currentHourStats.MiddleClicks,
                     ScrollDistance = _currentHourStats.ScrollDistance
                 };
+                
+                // Get current key stats to save and clear for new hour
+                if (_currentHourKeyStats.Any())
+                {
+                    keyStatsToSave = new Dictionary<string, int>(_currentHourKeyStats);
+                    _currentHourKeyStats.Clear();
+                }
                 
                 // Create new hour stats
                 _currentHourStats = HourlyStats.CreateEmpty(_todayStats.Date, currentHour);
@@ -441,6 +546,12 @@ public class DataLoggerService : IDisposable
                     MiddleClicks = _currentHourStats.MiddleClicks,
                     ScrollDistance = _currentHourStats.ScrollDistance
                 };
+                
+                // Get current key stats snapshot to save
+                if (_currentHourKeyStats.Any())
+                {
+                    keyStatsToSave = new Dictionary<string, int>(_currentHourKeyStats);
+                }
             }
         }
 
@@ -457,6 +568,13 @@ public class DataLoggerService : IDisposable
         };
         
         await _databaseService.SaveHourlyStatsAsync(hourStatsToSave.Date, hourStatsToSave.Hour, dailyStatsFormat);
+        
+        // Save key stats for heatmap
+        if (keyStatsToSave != null && keyStatsToSave.Any())
+        {
+            await _databaseService.SaveKeyStatsAsync(hourStatsToSave.Date, hourStatsToSave.Hour, keyStatsToSave);
+            _logger.LogDebug("Saved {KeyCount} individual key stats for hour {Hour}", keyStatsToSave.Count, hourStatsToSave.Hour);
+        }
     }
 
     /// <summary>

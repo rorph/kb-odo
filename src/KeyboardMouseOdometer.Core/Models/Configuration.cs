@@ -39,6 +39,7 @@ public class Configuration
     // Performance Settings
     public int StatisticsUpdateIntervalMs { get; set; } = 1000; // Update UI every second
     public int DatabaseSaveIntervalMs { get; set; } = 30000; // Save to DB every 30 seconds
+    public int DataFlushIntervalSeconds { get; set; } = 30; // Data flush interval in seconds (for compatibility)
     public int MouseMovementThrottleMs { get; set; } = 100; // Process mouse movement at most every 100ms
     public int ChartUpdateIntervalSeconds { get; set; } = 30; // Update charts every 30 seconds
     public int UIUpdateIntervalMs { get; set; } = 500; // Throttle UI updates to 2 times per second

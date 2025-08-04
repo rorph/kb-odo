@@ -38,6 +38,9 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
 
 ![Toolbar](./toolbar.png)
 
+### Dashboard
+![Heatmap](./heatmap.png)
+
 ## Requirements
 
 - Windows 10/11 (x64, x86, or ARM64)
@@ -215,11 +218,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] Settings panel with configurable options
 - [x] Comprehensive test suite (136 tests)
 - [x] Cross-platform build system
+- [x] Keyboard heatmap visualization
 
 ### Future Enhancements
 - [ ] Export to CSV/Excel formats
 - [ ] Custom chart date ranges
-- [ ] Keyboard heatmap visualization
 - [ ] Usage pattern analysis and insights
 - [ ] Multi-monitor DPI handling improvements
 - [ ] Cloud sync support (optional)

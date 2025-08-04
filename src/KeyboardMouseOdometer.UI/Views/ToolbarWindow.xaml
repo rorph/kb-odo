@@ -20,14 +20,14 @@
     </WindowChrome.WindowChrome>
     
     <!-- Main container with semi-transparent rounded background -->
-    <Border Background="#CC1E1E1E" 
+    <Border Background="{DynamicResource ToolbarBackgroundBrush}" 
             CornerRadius="8" 
             Margin="5"
-            BorderBrush="Transparent"
-            BorderThickness="0"
+            BorderBrush="{DynamicResource ToolbarBorderBrush}"
+            BorderThickness="1"
             WindowChrome.IsHitTestVisibleInChrome="True">
         <Border.Effect>
-            <DropShadowEffect Color="Black" Direction="270" ShadowDepth="3" Opacity="0.5" BlurRadius="8"/>
+            <DropShadowEffect Color="{DynamicResource ShadowColor}" Direction="270" ShadowDepth="3" Opacity="0.5" BlurRadius="8"/>
         </Border.Effect>
         
         <Grid MinHeight="30">
@@ -49,7 +49,7 @@
                            FontFamily="Cascadia Code, Consolas, Courier New"
                            Margin="6,0,0,0"
                            VerticalAlignment="Center"
-                           Foreground="White"/>
+                           Foreground="{DynamicResource ToolbarForegroundBrush}"/>
             </StackPanel>
 
             <!-- Compact Stats Display -->
@@ -78,7 +78,7 @@
                                    MinWidth="20" 
                                    Margin="4,0,0,0"
                                    VerticalAlignment="Center"
-                                   Foreground="White"/>
+                                   Foreground="{DynamicResource ToolbarForegroundBrush}"/>
                     </StackPanel>
                 </Border>
 

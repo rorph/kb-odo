@@ -50,6 +50,13 @@ public class DatabaseService : IDisposable
 
     private async Task CreateTablesAsync()
     {
+        // Create schema_version table for database versioning
+        var createVersionTable = @"
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )";
+
         // Create daily_stats table as per PROJECT_SPEC schema
         var createDailyStatsTable = @"
             CREATE TABLE IF NOT EXISTS daily_stats (
@@ -76,6 +83,21 @@ public class DatabaseService : IDisposable
                 PRIMARY KEY (date, hour)
             )";
 
+        // Create key_stats table for individual key tracking (heatmap feature)
+        var createKeyStatsTable = @"
+            CREATE TABLE IF NOT EXISTS key_stats (
+                date TEXT,
+                hour INTEGER,
+                key_code TEXT,
+                count INTEGER DEFAULT 0,
+                PRIMARY KEY (date, hour, key_code)
+            )";
+
+        // Create indexes for efficient queries
+        var createKeyStatsIndexes = @"
+            CREATE INDEX IF NOT EXISTS idx_key_stats_date_key ON key_stats(date, key_code);
+            CREATE INDEX IF NOT EXISTS idx_key_stats_key ON key_stats(key_code);";
+
         // Create optional raw events table for debugging/analytics
         var createRawEventsTable = @"
             CREATE TABLE IF NOT EXISTS key_mouse_events (
@@ -91,10 +113,19 @@ public class DatabaseService : IDisposable
 
         using var command = _connection!.CreateCommand();
         
+        command.CommandText = createVersionTable;
+        await command.ExecuteNonQueryAsync();
+        
         command.CommandText = createDailyStatsTable;
         await command.ExecuteNonQueryAsync();
 
         command.CommandText = createHourlyStatsTable;
+        await command.ExecuteNonQueryAsync();
+
+        command.CommandText = createKeyStatsTable;
+        await command.ExecuteNonQueryAsync();
+
+        command.CommandText = createKeyStatsIndexes;
         await command.ExecuteNonQueryAsync();
 
         command.CommandText = createRawEventsTable;
@@ -113,14 +144,25 @@ public class DatabaseService : IDisposable
         {
             _logger.LogInformation("Starting database schema migrations");
 
+            // Get current database version
+            var currentVersion = await GetDatabaseVersionAsync();
+            _logger.LogInformation("Current database version: {Version}", currentVersion);
+
             // Migration 1: Add scroll_distance to daily_stats (legacy migration)
-            await MigrateDailyStatsScrollDistanceAsync();
+            if (currentVersion < 1)
+            {
+                await MigrateDailyStatsScrollDistanceAsync();
+                await MigrateHourlyStatsScrollDistanceAsync();
+                await MigrateKeyMouseEventsColumnsAsync();
+                await SetDatabaseVersionAsync(1);
+            }
 
-            // Migration 2: Add scroll_distance to hourly_stats
-            await MigrateHourlyStatsScrollDistanceAsync();
-
-            // Migration 3: Add missing columns to key_mouse_events
-            await MigrateKeyMouseEventsColumnsAsync();
+            // Migration 2: Add key_stats table for heatmap feature (v2)
+            if (currentVersion < 2)
+            {
+                await MigrateToVersion2Async();
+                await SetDatabaseVersionAsync(2);
+            }
 
             // Validate schema consistency after migrations
             await ValidateSchemaConsistencyAsync();
@@ -132,6 +174,90 @@ public class DatabaseService : IDisposable
             _logger.LogError(ex, "Failed to run database migrations");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Get the current database schema version
+    /// </summary>
+    private async Task<int> GetDatabaseVersionAsync()
+    {
+        try
+        {
+            var sql = "SELECT MAX(version) FROM schema_version";
+            using var command = _connection!.CreateCommand();
+            command.CommandText = sql;
+            var result = await command.ExecuteScalarAsync();
+            return result == DBNull.Value || result == null ? 0 : Convert.ToInt32(result);
+        }
+        catch
+        {
+            // If table doesn't exist or error, assume version 0
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Set the database schema version
+    /// </summary>
+    private async Task SetDatabaseVersionAsync(int version)
+    {
+        var sql = "INSERT INTO schema_version (version) VALUES (@version)";
+        using var command = _connection!.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@version", version);
+        await command.ExecuteNonQueryAsync();
+        _logger.LogInformation("Database version updated to {Version}", version);
+    }
+
+    /// <summary>
+    /// Migration to version 2: Add key_stats table if it doesn't exist
+    /// </summary>
+    private async Task MigrateToVersion2Async()
+    {
+        try
+        {
+            _logger.LogInformation("Migrating database to version 2 (keyboard heatmap support)");
+            
+            // Check if key_stats table already exists
+            var tableExists = await TableExistsAsync("key_stats");
+            if (!tableExists)
+            {
+                var createKeyStatsTable = @"
+                    CREATE TABLE key_stats (
+                        date TEXT,
+                        hour INTEGER,
+                        key_code TEXT,
+                        count INTEGER DEFAULT 0,
+                        PRIMARY KEY (date, hour, key_code)
+                    )";
+                
+                await ExecuteSqlAsync(createKeyStatsTable);
+                
+                // Create indexes
+                await ExecuteSqlAsync("CREATE INDEX idx_key_stats_date_key ON key_stats(date, key_code)");
+                await ExecuteSqlAsync("CREATE INDEX idx_key_stats_key ON key_stats(key_code)");
+                
+                _logger.LogInformation("Created key_stats table with indexes");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to migrate to version 2");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Check if a table exists
+    /// </summary>
+    private async Task<bool> TableExistsAsync(string tableName)
+    {
+        var sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=@tableName";
+        using var command = _connection!.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@tableName", tableName);
+        var result = await command.ExecuteScalarAsync();
+        return result != null;
     }
 
     /// <summary>
@@ -706,6 +832,218 @@ public class DatabaseService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get lifetime statistics");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Save or update key statistics (for heatmap feature)
+    /// </summary>
+    public async Task SaveKeyStatsAsync(string date, int hour, Dictionary<string, int> keyCounts)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        if (!keyCounts.Any()) return;
+
+        try
+        {
+            using var transaction = _connection.BeginTransaction();
+            
+            var sql = @"
+                INSERT OR REPLACE INTO key_stats 
+                (date, hour, key_code, count)
+                VALUES (@date, @hour, @keyCode, @count)";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Transaction = transaction;
+
+            foreach (var kvp in keyCounts)
+            {
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("@date", date);
+                command.Parameters.AddWithValue("@hour", hour);
+                command.Parameters.AddWithValue("@keyCode", kvp.Key);
+                command.Parameters.AddWithValue("@count", kvp.Value);
+
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+            _logger.LogDebug("Saved key stats for {Date} hour {Hour} ({Count} keys)", date, hour, keyCounts.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save key stats for {Date} hour {Hour}", date, hour);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get key statistics for a specific date range
+    /// </summary>
+    public async Task<Dictionary<string, long>> GetKeyStatsByDateRangeAsync(DateTime startDate, DateTime endDate)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        var results = new Dictionary<string, long>();
+
+        try
+        {
+            var sql = @"
+                SELECT key_code, SUM(count) as total_count
+                FROM key_stats 
+                WHERE date >= @startDate AND date <= @endDate
+                GROUP BY key_code
+                ORDER BY total_count DESC";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("@startDate", startDate.ToString("yyyy-MM-dd"));
+            command.Parameters.AddWithValue("@endDate", endDate.ToString("yyyy-MM-dd"));
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var keyCode = reader.GetString(0);
+                var count = reader.GetInt64(1);
+                results[keyCode] = count;
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get key stats for date range {StartDate} to {EndDate}", startDate, endDate);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get key statistics for today
+    /// </summary>
+    public async Task<Dictionary<string, long>> GetTodayKeyStatsAsync()
+    {
+        var today = DateTime.Today;
+        return await GetKeyStatsByDateRangeAsync(today, today);
+    }
+
+    /// <summary>
+    /// Get key statistics for the last 7 days
+    /// </summary>
+    public async Task<Dictionary<string, long>> GetWeeklyKeyStatsAsync()
+    {
+        var endDate = DateTime.Today;
+        var startDate = endDate.AddDays(-6);
+        return await GetKeyStatsByDateRangeAsync(startDate, endDate);
+    }
+
+    /// <summary>
+    /// Get key statistics for the last 30 days
+    /// </summary>
+    public async Task<Dictionary<string, long>> GetMonthlyKeyStatsAsync()
+    {
+        var endDate = DateTime.Today;
+        var startDate = endDate.AddDays(-29);
+        return await GetKeyStatsByDateRangeAsync(startDate, endDate);
+    }
+
+    /// <summary>
+    /// Get database connection for advanced operations (testing use)
+    /// </summary>
+    public async Task<SqliteConnection> GetConnectionAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        // Return the existing connection, ensuring it's open
+        if (_connection.State != System.Data.ConnectionState.Open)
+        {
+            await _connection.OpenAsync();
+        }
+        
+        return _connection;
+    }
+
+    /// <summary>
+    /// Get lifetime key statistics
+    /// </summary>
+    public async Task<Dictionary<string, long>> GetLifetimeKeyStatsAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        var results = new Dictionary<string, long>();
+
+        try
+        {
+            var sql = @"
+                SELECT key_code, SUM(count) as total_count
+                FROM key_stats 
+                GROUP BY key_code
+                ORDER BY total_count DESC";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var keyCode = reader.GetString(0);
+                var count = reader.GetInt64(1);
+                results[keyCode] = count;
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get lifetime key stats");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get the top N most used keys for a date range
+    /// </summary>
+    public async Task<List<(string KeyCode, long Count)>> GetTopKeysAsync(DateTime startDate, DateTime endDate, int topN = 10)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        var results = new List<(string KeyCode, long Count)>();
+
+        try
+        {
+            var sql = @"
+                SELECT key_code, SUM(count) as total_count
+                FROM key_stats 
+                WHERE date >= @startDate AND date <= @endDate
+                GROUP BY key_code
+                ORDER BY total_count DESC
+                LIMIT @limit";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("@startDate", startDate.ToString("yyyy-MM-dd"));
+            command.Parameters.AddWithValue("@endDate", endDate.ToString("yyyy-MM-dd"));
+            command.Parameters.AddWithValue("@limit", topN);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var keyCode = reader.GetString(0);
+                var count = reader.GetInt64(1);
+                results.Add((keyCode, count));
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get top {TopN} keys for date range", topN);
             throw;
         }
     }

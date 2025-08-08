@@ -58,6 +58,11 @@
     <SolidColorBrush x:Key="ErrorBrush" Color="#FFB71C1C"/>   <!-- Dark red background -->
     <SolidColorBrush x:Key="InfoBrush" Color="#FF0D47A1"/>    <!-- Dark blue background -->
     
+    <!-- Tooltip Colors -->
+    <SolidColorBrush x:Key="TooltipBackgroundBrush" Color="#FF2D2D30"/>
+    <SolidColorBrush x:Key="TooltipForegroundBrush" Color="#FFF0F0F0"/>
+    <SolidColorBrush x:Key="TooltipBorderBrush" Color="#FF555555"/>
+    
     <!-- Separator Colors -->
     <SolidColorBrush x:Key="SeparatorBrush" Color="#FF3F3F3F"/>
     

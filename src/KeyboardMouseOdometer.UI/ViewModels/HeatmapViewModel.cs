@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -28,14 +29,16 @@ namespace KeyboardMouseOdometer.UI.ViewModels
         private readonly DataLoggerService _dataLoggerService;
         private readonly IKeyCodeMapper _keyCodeMapper;
         private readonly DispatcherTimer _refreshTimer;
+        private readonly Configuration _configuration;
         
-        private List<KeyboardKey> _keyboardLayout;
+        private List<KeyboardKey> _keyboardLayout = new();
         private HeatmapTimeRange _selectedTimeRange = HeatmapTimeRange.Today;
         private long _totalKeyPresses;
         private string _mostUsedKey = "-";
         private long _mostUsedKeyCount;
         private double _typingSpeed;
         private bool _isLoading;
+        private string _colorScheme = "Blue";
 
         public List<KeyboardKey> KeyboardLayout
         {
@@ -107,6 +110,18 @@ namespace KeyboardMouseOdometer.UI.ViewModels
                 OnPropertyChanged();
             }
         }
+        
+        public string ColorScheme
+        {
+            get => _colorScheme;
+            set
+            {
+                _colorScheme = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public ObservableCollection<KeyUsageStatsSummary> TopKeys { get; private set; } = new();
 
         public ICommand RefreshCommand { get; }
         public ICommand ChangeTimeRangeCommand { get; }
@@ -117,6 +132,8 @@ namespace KeyboardMouseOdometer.UI.ViewModels
             _databaseService = databaseService;
             _dataLoggerService = dataLoggerService;
             _keyCodeMapper = keyCodeMapper;
+            _configuration = Configuration.LoadFromFile();
+            _colorScheme = _configuration.HeatmapColorScheme;
             
             // Initialize keyboard layout
             _keyboardLayout = Core.Models.KeyboardLayout.GetUSQwertyLayout();
@@ -196,6 +213,24 @@ namespace KeyboardMouseOdometer.UI.ViewModels
                     // Calculate typing speed based on time range
                     var duration = GetTimeRangeDuration();
                     TypingSpeed = StatisticsService.CalculateTypingSpeed(TotalKeyPresses, duration);
+
+                    // Update top keys collection
+                    TopKeys.Clear();
+                    var topKeysList = keyStats
+                        .OrderByDescending(kvp => kvp.Value)
+                        .Take(15) // Show top 15 keys
+                        .Select(kvp => new KeyUsageStatsSummary
+                        {
+                            Key = kvp.Key,
+                            PressCount = kvp.Value,
+                            Percentage = TotalKeyPresses > 0 ? (kvp.Value * 100.0 / TotalKeyPresses) : 0
+                        })
+                        .ToList();
+
+                    foreach (var keyUsage in topKeysList)
+                    {
+                        TopKeys.Add(keyUsage);
+                    }
                 }
                 else
                 {
@@ -205,6 +240,7 @@ namespace KeyboardMouseOdometer.UI.ViewModels
                     MostUsedKey = "-";
                     MostUsedKeyCount = 0;
                     TypingSpeed = 0;
+                    TopKeys.Clear();
                 }
             }
             catch (Exception ex)
@@ -229,9 +265,9 @@ namespace KeyboardMouseOdometer.UI.ViewModels
             };
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
@@ -241,42 +277,42 @@ namespace KeyboardMouseOdometer.UI.ViewModels
     public class RelayCommand : ICommand
     {
         private readonly Action _execute;
-        private readonly Func<bool> _canExecute;
+        private readonly Func<bool>? _canExecute;
 
-        public RelayCommand(Action execute, Func<bool> canExecute = null)
+        public RelayCommand(Action execute, Func<bool>? canExecute = null)
         {
             _execute = execute;
             _canExecute = canExecute;
         }
 
-        public event EventHandler CanExecuteChanged
+        public event EventHandler? CanExecuteChanged
         {
             add { CommandManager.RequerySuggested += value; }
             remove { CommandManager.RequerySuggested -= value; }
         }
 
-        public bool CanExecute(object parameter) => _canExecute?.Invoke() ?? true;
-        public void Execute(object parameter) => _execute();
+        public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
+        public void Execute(object? parameter) => _execute();
     }
 
     public class RelayCommand<T> : ICommand
     {
         private readonly Action<T> _execute;
-        private readonly Predicate<T> _canExecute;
+        private readonly Predicate<T>? _canExecute;
 
-        public RelayCommand(Action<T> execute, Predicate<T> canExecute = null)
+        public RelayCommand(Action<T> execute, Predicate<T>? canExecute = null)
         {
             _execute = execute;
             _canExecute = canExecute;
         }
 
-        public event EventHandler CanExecuteChanged
+        public event EventHandler? CanExecuteChanged
         {
             add { CommandManager.RequerySuggested += value; }
             remove { CommandManager.RequerySuggested -= value; }
         }
 
-        public bool CanExecute(object parameter) => _canExecute?.Invoke((T)parameter) ?? true;
-        public void Execute(object parameter) => _execute((T)parameter);
+        public bool CanExecute(object? parameter) => _canExecute?.Invoke((T)parameter!) ?? true;
+        public void Execute(object? parameter) => _execute((T)parameter!);
     }
 }

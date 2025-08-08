@@ -1,3 +1,13 @@
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using System.Diagnostics;
+using System.Drawing;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Threading;
 using KeyboardMouseOdometer.Core.Services;
 using KeyboardMouseOdometer.Core.Models;
 using KeyboardMouseOdometer.Core.Interfaces;
@@ -7,14 +17,10 @@ using KeyboardMouseOdometer.UI.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Windows;
 using Hardcodet.Wpf.TaskbarNotification;
-using System.Diagnostics;
-using System.Drawing;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
 using CommunityToolkit.Mvvm.Input;
+using Serilog;
+using Serilog.Events;
 
 namespace KeyboardMouseOdometer.UI;
 
@@ -41,7 +47,7 @@ public partial class App : Application
     
     // Windows Event Log API
     [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern IntPtr RegisterEventSource(string lpUNCServerName, string lpSourceName);
+    private static extern IntPtr RegisterEventSource(string? lpUNCServerName, string lpSourceName);
     
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool ReportEvent(
@@ -64,6 +70,11 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // Set up global exception handlers
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        
         // Check for command line arguments
         _isDiagnosticMode = e.Args.Contains("--diagnostic") || e.Args.Contains("-d");
         _isTestMode = e.Args.Contains("--test") || e.Args.Contains("-t");
@@ -228,17 +239,35 @@ public partial class App : Application
                 services.AddTransient<MainWindow>();
                 services.AddTransient<ToolbarWindow>();
 
-                // Logging
+                // Logging configuration with Serilog
+                var logPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KeyboardMouseOdometer",
+                    "logs");
+                Directory.CreateDirectory(logPath);
+                
+                var logFile = Path.Combine(logPath, $"app_{DateTime.Now:yyyyMMdd}.log");
+                
+                // Configure Serilog
+                Log.Logger = new LoggerConfiguration()
+                    .MinimumLevel.Debug()
+                    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                    .Enrich.FromLogContext()
+                    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                    .WriteTo.Debug(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                    .WriteTo.File(
+                        logFile,
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 7,
+                        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}",
+                        buffered: false,  // Write immediately for crash debugging
+                        flushToDiskInterval: TimeSpan.FromSeconds(1))
+                    .CreateLogger();
+                
                 services.AddLogging(builder =>
                 {
-                    builder.AddConsole();
-                    builder.AddDebug();
-                    
-#if DEBUG
-                    builder.SetMinimumLevel(LogLevel.Debug);
-#else
-                    builder.SetMinimumLevel(LogLevel.Information);
-#endif
+                    builder.ClearProviders();
+                    builder.AddSerilog(Log.Logger, dispose: true);
                 });
             });
     }
@@ -601,6 +630,115 @@ public partial class App : Application
         Shutdown();
     }
     
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var exception = e.ExceptionObject as Exception;
+        var message = $"CRITICAL: Unhandled exception - IsTerminating: {e.IsTerminating}";
+        
+        try
+        {
+            Log.Fatal(exception, message);
+            _logger?.LogCritical(exception, message);
+        }
+        catch { }
+        
+        LogToEventLog($"{message}\n{exception}", EVENTLOG_ERROR_TYPE);
+        
+        if (e.IsTerminating)
+        {
+            SaveCrashDump(exception);
+        }
+    }
+    
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try
+        {
+            Log.Error(e.Exception, "Unobserved task exception");
+            _logger?.LogError(e.Exception, "Unobserved task exception");
+        }
+        catch { }
+        
+        e.SetObserved(); // Prevent process termination
+    }
+    
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            Log.Error(e.Exception, "Dispatcher unhandled exception");
+            _logger?.LogError(e.Exception, "Dispatcher unhandled exception");
+        }
+        catch { }
+        
+        // Try to recover
+        e.Handled = true;
+        
+        // Show error to user
+        MessageBox.Show(
+            $"An error occurred: {e.Exception.Message}\n\nThe application will try to continue.",
+            "Error",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+    }
+    
+    private void SaveCrashDump(Exception? exception)
+    {
+        try
+        {
+            var crashDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "KeyboardMouseOdometer",
+                "crashes");
+            Directory.CreateDirectory(crashDir);
+            
+            var crashFile = Path.Combine(crashDir, $"crash_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+            var crashInfo = new StringBuilder();
+            crashInfo.AppendLine($"Crash Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            crashInfo.AppendLine($"Application Version: {GetApplicationVersion()}");
+            crashInfo.AppendLine($"OS: {Environment.OSVersion}");
+            crashInfo.AppendLine($".NET Version: {Environment.Version}");
+            crashInfo.AppendLine();
+            crashInfo.AppendLine("Exception:");
+            crashInfo.AppendLine(exception?.ToString() ?? "No exception information available");
+            
+            File.WriteAllText(crashFile, crashInfo.ToString());
+        }
+        catch { }
+    }
+    
+    private string GetApplicationVersion()
+    {
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var version = assembly.GetName().Version;
+            return version?.ToString() ?? "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+    
+    private void LogToEventLog(string message, ushort eventType)
+    {
+        try
+        {
+            var eventSource = RegisterEventSource(null, "KeyboardMouseOdometer");
+            if (eventSource != IntPtr.Zero)
+            {
+                var messages = new string[] { message };
+                ReportEvent(eventSource, eventType, 0, 0, IntPtr.Zero, 1, 0, messages, IntPtr.Zero);
+                DeregisterEventSource(eventSource);
+            }
+        }
+        catch
+        {
+            // Silently fail if we can't write to event log
+        }
+    }
+    
     private void LogStartupStep(string message)
     {
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
@@ -624,7 +762,7 @@ public partial class App : Application
     {
         try
         {
-            var eventSource = RegisterEventSource(null!, "KeyboardMouseOdometer");
+            var eventSource = RegisterEventSource(null, "KeyboardMouseOdometer");
             if (eventSource != IntPtr.Zero)
             {
                 string[] messages = { message };

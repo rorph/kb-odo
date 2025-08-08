@@ -1,6 +1,15 @@
 namespace KeyboardMouseOdometer.Core.Models;
 
 /// <summary>
+/// Heatmap color scheme options
+/// </summary>
+public enum HeatmapColorScheme
+{
+    Classic,  // Blue -> Cyan -> Green -> Yellow -> Orange -> Red
+    FLIR      // FLIR thermal imaging palette (Black -> Purple -> Red -> Orange -> Yellow -> White)
+}
+
+/// <summary>
 /// Core-compatible color structure for heatmap visualization
 /// </summary>
 public struct HeatmapColor
@@ -32,13 +41,23 @@ public struct HeatmapColor
     }
 
     /// <summary>
-    /// Calculate color from heat level using gradient (Blue -> Cyan -> Green -> Yellow -> Orange -> Red)
+    /// Calculate color from heat level using specified color scheme
     /// </summary>
-    public static HeatmapColor CalculateHeatColor(double heatLevel)
+    public static HeatmapColor CalculateHeatColor(double heatLevel, HeatmapColorScheme colorScheme = HeatmapColorScheme.Classic)
     {
         // Clamp heat level between 0 and 1
         heatLevel = Math.Max(0, Math.Min(1, heatLevel));
 
+        return colorScheme == HeatmapColorScheme.FLIR 
+            ? CalculateFLIRColor(heatLevel) 
+            : CalculateClassicColor(heatLevel);
+    }
+
+    /// <summary>
+    /// Calculate color using classic gradient (Blue -> Cyan -> Green -> Yellow -> Orange -> Red)
+    /// </summary>
+    private static HeatmapColor CalculateClassicColor(double heatLevel)
+    {
         byte r, g, b;
 
         if (heatLevel < 0.2)
@@ -80,6 +99,74 @@ public struct HeatmapColor
             r = 255;
             g = (byte)(128 * (1 - t));
             b = 0;
+        }
+
+        return FromArgb(200, r, g, b); // Semi-transparent
+    }
+
+    /// <summary>
+    /// Calculate color using FLIR thermal imaging palette
+    /// Black -> Purple -> Blue -> Red -> Orange -> Yellow -> White
+    /// </summary>
+    private static HeatmapColor CalculateFLIRColor(double heatLevel)
+    {
+        byte r, g, b;
+
+        if (heatLevel < 0.14)
+        {
+            // Black to Deep Purple
+            var t = heatLevel / 0.14;
+            r = (byte)(17 * t);
+            g = 0;
+            b = (byte)(36 * t);
+        }
+        else if (heatLevel < 0.28)
+        {
+            // Deep Purple to Blue
+            var t = (heatLevel - 0.14) / 0.14;
+            r = (byte)(17 + 53 * t);
+            g = (byte)(7 * t);
+            b = (byte)(36 + 100 * t);
+        }
+        else if (heatLevel < 0.42)
+        {
+            // Blue to Red
+            var t = (heatLevel - 0.28) / 0.14;
+            r = (byte)(70 + 138 * t);
+            g = (byte)(7 * (1 - t));
+            b = (byte)(136 * (1 - t));
+        }
+        else if (heatLevel < 0.56)
+        {
+            // Red to Dark Orange
+            var t = (heatLevel - 0.42) / 0.14;
+            r = (byte)(208 + 27 * t);
+            g = (byte)(34 * t);
+            b = 0;
+        }
+        else if (heatLevel < 0.70)
+        {
+            // Dark Orange to Orange
+            var t = (heatLevel - 0.56) / 0.14;
+            r = (byte)(235 + 20 * t);
+            g = (byte)(34 + 103 * t);
+            b = 0;
+        }
+        else if (heatLevel < 0.85)
+        {
+            // Orange to Yellow
+            var t = (heatLevel - 0.70) / 0.15;
+            r = 255;
+            g = (byte)(137 + 100 * t);
+            b = 0;
+        }
+        else
+        {
+            // Yellow to White
+            var t = (heatLevel - 0.85) / 0.15;
+            r = 255;
+            g = (byte)(237 + 18 * t);
+            b = (byte)(200 * t);
         }
 
         return FromArgb(200, r, g, b); // Semi-transparent

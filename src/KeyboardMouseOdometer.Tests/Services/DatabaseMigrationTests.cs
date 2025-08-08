@@ -64,9 +64,27 @@ public class DatabaseMigrationTests : IDisposable
         // Act
         await _databaseService.InitializeAsync();
 
-        // Assert - Database should be at version 2 with new schema
+        // Assert - Database should be at version 3 (includes aggregation views)
         var version = await GetDatabaseVersionAsync();
-        Assert.Equal(2, version);
+        Assert.Equal(3, version);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_CreatesAggregationViews()
+    {
+        // Act
+        await _databaseService.InitializeAsync();
+
+        // Assert - Check that all aggregation views exist
+        var weeklyViewExists = await ViewExistsAsync("weekly_stats");
+        var monthlyViewExists = await ViewExistsAsync("monthly_stats");
+        var lifetimeViewExists = await ViewExistsAsync("lifetime_stats_view");
+        var todayHourlyViewExists = await ViewExistsAsync("today_hourly_stats");
+        
+        Assert.True(weeklyViewExists, "weekly_stats view should be created");
+        Assert.True(monthlyViewExists, "monthly_stats view should be created");
+        Assert.True(lifetimeViewExists, "lifetime_stats_view should be created");
+        Assert.True(todayHourlyViewExists, "today_hourly_stats view should be created");
     }
 
     [Fact]
@@ -145,7 +163,7 @@ public class DatabaseMigrationTests : IDisposable
         Assert.Equal(35, result["B"]); // 5 * 7 days
     }
 
-    [Fact(Skip = "Temporarily skipped due to tuple access issue")]
+    [Fact]
     public async Task GetTopKeysAsync_ReturnsTopNKeys()
     {
         // Arrange
@@ -167,12 +185,12 @@ public class DatabaseMigrationTests : IDisposable
         // Assert
         Assert.NotNull(result);
         Assert.Equal(3, result.Count);
-        Assert.Equal("A", result[0].Item1);  // KeyCode is Item1 in tuple
-        Assert.Equal(500, result[0].Item2);  // Count is Item2 in tuple
-        Assert.Equal("B", result[1].Item1);
-        Assert.Equal(300, result[1].Item2);
-        Assert.Equal("C", result[2].Item1);
-        Assert.Equal(200, result[2].Item2);
+        Assert.Equal("A", result[0].KeyCode);  // Use named tuple property
+        Assert.Equal(500, result[0].Count);    // Use named tuple property
+        Assert.Equal("B", result[1].KeyCode);
+        Assert.Equal(300, result[1].Count);
+        Assert.Equal("C", result[2].KeyCode);
+        Assert.Equal(200, result[2].Count);
     }
 
     [Fact]
@@ -270,6 +288,17 @@ public class DatabaseMigrationTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name=@indexName";
         command.Parameters.AddWithValue("@indexName", indexName);
+        var result = await command.ExecuteScalarAsync();
+        return result != null;
+    }
+
+    private async Task<bool> ViewExistsAsync(string viewName)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_testDbPath}");
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type='view' AND name=@viewName";
+        command.Parameters.AddWithValue("@viewName", viewName);
         var result = await command.ExecuteScalarAsync();
         return result != null;
     }

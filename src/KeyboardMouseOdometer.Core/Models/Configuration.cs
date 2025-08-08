@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.IO;
 
 namespace KeyboardMouseOdometer.Core.Models;
 
@@ -35,6 +36,14 @@ public class Configuration
     public double ToolbarHeight { get; set; } = 40;
     public double ToolbarLeft { get; set; } = -1; // -1 means center horizontally
     public double ToolbarTop { get; set; } = -1;  // -1 means position above taskbar
+    public string ToolbarMonitorDeviceName { get; set; } = ""; // Monitor device name to restore position on correct screen
+    
+    // Main Window Settings
+    public double MainWindowWidth { get; set; } = 800;
+    public double MainWindowHeight { get; set; } = 600;
+    
+    // Heatmap Settings
+    public string HeatmapColorScheme { get; set; } = "Classic"; // "Classic" or "FLIR"
 
     // Performance Settings
     public int StatisticsUpdateIntervalMs { get; set; } = 1000; // Update UI every second
@@ -72,7 +81,8 @@ public class Configuration
             && UIUpdateIntervalMs >= 100
             && UIUpdateIntervalMs <= 5000
             && !string.IsNullOrWhiteSpace(DatabasePath)
-            && (DistanceUnit == "metric" || DistanceUnit == "imperial" || DistanceUnit == "pixels");
+            && (DistanceUnit == "metric" || DistanceUnit == "imperial" || DistanceUnit == "pixels")
+            && (HeatmapColorScheme == "Classic" || HeatmapColorScheme == "FLIR");
     }
 
     /// <summary>
@@ -106,6 +116,8 @@ public class Configuration
             errors.Add("Database path cannot be empty");
         if (DistanceUnit != "metric" && DistanceUnit != "imperial" && DistanceUnit != "pixels")
             errors.Add($"Distance unit must be 'metric', 'imperial', or 'pixels', but was '{DistanceUnit}'");
+        if (HeatmapColorScheme != "Classic" && HeatmapColorScheme != "FLIR")
+            errors.Add($"Heatmap color scheme must be 'Classic' or 'FLIR', but was '{HeatmapColorScheme}'");
 
         return errors;
     }
@@ -130,6 +142,7 @@ public class Configuration
         {
             var configPath = GetConfigFilePath();
             System.Diagnostics.Debug.WriteLine($"Loading configuration from: {configPath}");
+            System.Diagnostics.Trace.WriteLine($"[CONFIG] Loading configuration from: {configPath}");
             
             if (File.Exists(configPath))
             {
@@ -145,11 +158,13 @@ public class Configuration
                 if (config != null && config.IsValid())
                 {
                     System.Diagnostics.Debug.WriteLine("Configuration loaded and validated successfully");
+                    System.Diagnostics.Trace.WriteLine($"[CONFIG] Configuration loaded successfully. HeatmapColorScheme: {config.HeatmapColorScheme}");
                     return config;
                 }
                 else
                 {
                     System.Diagnostics.Debug.WriteLine("Configuration file exists but is invalid, using defaults");
+                    System.Diagnostics.Trace.WriteLine("[CONFIG] Configuration invalid, using defaults");
                 }
             }
             else
@@ -161,11 +176,13 @@ public class Configuration
         {
             // Log error if possible, but don't throw - fall back to default
             System.Diagnostics.Debug.WriteLine($"Failed to load configuration: {ex.Message}");
+            System.Diagnostics.Trace.WriteLine($"[CONFIG] ERROR loading configuration: {ex}");
         }
 
         // Return default configuration if loading failed
         var defaultConfig = CreateDefault();
         System.Diagnostics.Debug.WriteLine("Using default configuration");
+        System.Diagnostics.Trace.WriteLine($"[CONFIG] Using default configuration. HeatmapColorScheme: {defaultConfig.HeatmapColorScheme}");
         return defaultConfig;
     }
 
@@ -233,6 +250,9 @@ public class Configuration
         ToolbarHeight = other.ToolbarHeight;
         ToolbarLeft = other.ToolbarLeft;
         ToolbarTop = other.ToolbarTop;
+        ToolbarMonitorDeviceName = other.ToolbarMonitorDeviceName;
+        MainWindowWidth = other.MainWindowWidth;
+        MainWindowHeight = other.MainWindowHeight;
         StatisticsUpdateIntervalMs = other.StatisticsUpdateIntervalMs;
         DatabaseSaveIntervalMs = other.DatabaseSaveIntervalMs;
         MouseMovementThrottleMs = other.MouseMovementThrottleMs;
@@ -240,5 +260,6 @@ public class Configuration
         UIUpdateIntervalMs = other.UIUpdateIntervalMs;
         EnableDatabaseEncryption = other.EnableDatabaseEncryption;
         LogDetailedKeystrokes = other.LogDetailedKeystrokes;
+        HeatmapColorScheme = other.HeatmapColorScheme;
     }
 }

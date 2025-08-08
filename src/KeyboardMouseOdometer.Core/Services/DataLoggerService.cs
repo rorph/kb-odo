@@ -24,6 +24,7 @@ public class DataLoggerService : IDisposable
     private HourlyStats _currentHourStats;
     private readonly object _statsLock = new object();
     private string _lastKeyPressed = string.Empty;
+    private bool _isRollingOver = false; // Prevent recursive rollover
 
     // Thread-safe collections for detailed tracking
     private readonly ConcurrentDictionary<string, int> _keyFrequency = new();
@@ -72,6 +73,147 @@ public class DataLoggerService : IDisposable
     }
 
     /// <summary>
+    /// Ensures stats objects are for the current date and hour
+    /// </summary>
+    private void EnsureCurrentDateStats()
+    {
+        // Prevent recursive rollover
+        if (_isRollingOver)
+        {
+            _logger.LogDebug("Rollover already in progress, skipping");
+            return;
+        }
+        
+        var currentDate = DateTime.Today.ToString("yyyy-MM-dd");
+        var currentHour = DateTime.Now.Hour;
+        
+        // Check if we need to roll over to a new day
+        if (_todayStats.Date != currentDate)
+        {
+            _logger.LogInformation("Date changed from {OldDate} to {NewDate}, starting rollover", _todayStats.Date, currentDate);
+            
+            // Set flag to prevent recursive calls
+            _isRollingOver = true;
+            
+            try
+            {
+                // Save the old day's stats WITHOUT calling GetCurrentStats (which would recurse)
+                var statsToSave = new DailyStats
+                {
+                    Date = _todayStats.Date,
+                    KeyCount = _todayStats.KeyCount,
+                    MouseDistance = _todayStats.MouseDistance,
+                    LeftClicks = _todayStats.LeftClicks,
+                    RightClicks = _todayStats.RightClicks,
+                    MiddleClicks = _todayStats.MiddleClicks,
+                    ScrollDistance = _todayStats.ScrollDistance
+                };
+                
+                _logger.LogInformation("Saving final stats for {Date}: {KeyCount} keys, {MouseDistance:F2}m", 
+                    statsToSave.Date, statsToSave.KeyCount, statsToSave.MouseDistance);
+                
+                // Save directly without triggering recursive calls
+                _databaseService.SaveDailyStatsAsync(statsToSave).GetAwaiter().GetResult();
+                
+                // Save any pending hourly stats for the old day
+                if (_currentHourStats.KeyCount > 0 || _currentHourStats.MouseDistance > 0 || 
+                    _currentHourStats.TotalClicks > 0 || _currentHourStats.ScrollDistance > 0)
+                {
+                    _logger.LogInformation("Saving final hourly stats for hour {Hour}", _currentHourStats.Hour);
+                    _databaseService.SaveHourlyStatsAsync(_currentHourStats).GetAwaiter().GetResult();
+                }
+                
+                // Save any pending key stats
+                if (_currentHourKeyStats.Count > 0)
+                {
+                    var keyStatsList = _currentHourKeyStats.Select(kvp => new KeyStats
+                    {
+                        Date = _currentHourStats.Date,
+                        Hour = _currentHourStats.Hour,
+                        KeyCode = kvp.Key,
+                        Count = kvp.Value
+                    }).ToList();
+                    
+                    _logger.LogInformation("Saving {Count} key stats for final hour", keyStatsList.Count);
+                    _databaseService.SaveKeyStatsBatchAsync(keyStatsList).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save data during day rollover");
+            }
+            finally
+            {
+                // Create new stats for today
+                _todayStats = DailyStats.CreateForToday();
+                _currentHourStats = HourlyStats.CreateEmpty(currentDate, currentHour);
+                _keyFrequency.Clear();
+                _currentHourKeyStats.Clear();
+                _lastKeyPressed = string.Empty;
+                
+                _logger.LogInformation("Rollover complete, new day stats initialized for {Date}", currentDate);
+                
+                // Clear flag
+                _isRollingOver = false;
+            }
+            
+            // Clean up old data asynchronously (non-critical)
+            _ = Task.Run(async () => 
+            {
+                try
+                {
+                    await _databaseService.CleanupOldDataAsync(_configuration.DatabaseRetentionDays);
+                    _logger.LogInformation("Old data cleanup completed");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to cleanup old data");
+                }
+            });
+        }
+        
+        // Check if we need to roll over to a new hour (only if not in day rollover)
+        if (!_isRollingOver && _currentHourStats.Hour != currentHour)
+        {
+            _logger.LogInformation("Hour changed from {OldHour} to {NewHour}, rolling over hourly stats", _currentHourStats.Hour, currentHour);
+            
+            // Save current hour stats directly without recursion
+            try
+            {
+                if (_currentHourStats.KeyCount > 0 || _currentHourStats.MouseDistance > 0 || 
+                    _currentHourStats.TotalClicks > 0 || _currentHourStats.ScrollDistance > 0)
+                {
+                    _databaseService.SaveHourlyStatsAsync(_currentHourStats).GetAwaiter().GetResult();
+                    _logger.LogDebug("Saved hourly stats for hour {Hour}", _currentHourStats.Hour);
+                }
+                
+                // Save key stats for the hour
+                if (_currentHourKeyStats.Count > 0)
+                {
+                    var keyStatsList = _currentHourKeyStats.Select(kvp => new KeyStats
+                    {
+                        Date = _currentHourStats.Date,
+                        Hour = _currentHourStats.Hour,
+                        KeyCode = kvp.Key,
+                        Count = kvp.Value
+                    }).ToList();
+                    
+                    _databaseService.SaveKeyStatsBatchAsync(keyStatsList).GetAwaiter().GetResult();
+                    _logger.LogDebug("Saved {Count} key stats for hour {Hour}", keyStatsList.Count, _currentHourStats.Hour);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save hourly stats during hour rollover");
+            }
+            
+            // Create new hour stats
+            _currentHourStats = HourlyStats.CreateEmpty(currentDate, currentHour);
+            _currentHourKeyStats.Clear();
+        }
+    }
+
+    /// <summary>
     /// Initialize the service and load today's existing data
     /// </summary>
     public async Task InitializeAsync()
@@ -106,6 +248,7 @@ public class DataLoggerService : IDisposable
     {
         lock (_statsLock)
         {
+            EnsureCurrentDateStats();
             _todayStats.KeyCount++;
             _currentHourStats.KeyCount++;
             _lastKeyPressed = keyCode;
@@ -148,6 +291,7 @@ public class DataLoggerService : IDisposable
     {
         lock (_statsLock)
         {
+            EnsureCurrentDateStats();
             _todayStats.KeyCount++;
             _currentHourStats.KeyCount++;
             _lastKeyPressed = keyCode;
@@ -244,6 +388,7 @@ public class DataLoggerService : IDisposable
 
         lock (_statsLock)
         {
+            EnsureCurrentDateStats();
             _todayStats.MouseDistance += distanceMeters;
             _currentHourStats.MouseDistance += distanceMeters;
         }
@@ -271,6 +416,7 @@ public class DataLoggerService : IDisposable
     {
         lock (_statsLock)
         {
+            EnsureCurrentDateStats();
             switch (button)
             {
                 case MouseButton.Left:
@@ -317,6 +463,7 @@ public class DataLoggerService : IDisposable
 
         lock (_statsLock)
         {
+            EnsureCurrentDateStats();
             _todayStats.ScrollDistance += scrollDistance;
             _currentHourStats.ScrollDistance += scrollDistance;
         }
@@ -343,6 +490,12 @@ public class DataLoggerService : IDisposable
     {
         lock (_statsLock)
         {
+            // Only ensure current date if not already rolling over
+            if (!_isRollingOver)
+            {
+                EnsureCurrentDateStats();
+            }
+            
             return new DailyStats
             {
                 Date = _todayStats.Date,
@@ -402,6 +555,13 @@ public class DataLoggerService : IDisposable
     {
         try
         {
+            // Skip if rollover is in progress
+            if (_isRollingOver)
+            {
+                _logger.LogDebug("Skipping save during rollover");
+                return;
+            }
+            
             DailyStats currentStats;
             lock (_statsLock)
             {
@@ -464,17 +624,34 @@ public class DataLoggerService : IDisposable
     {
         try
         {
-            _logger.LogInformation("Midnight rollover - creating new daily stats");
+            _logger.LogInformation("Midnight timer triggered - checking for rollover");
+            
+            // Check if rollover is already in progress
+            if (_isRollingOver)
+            {
+                _logger.LogWarning("Midnight rollover already in progress, skipping timer-triggered rollover");
+                return;
+            }
 
-            // Save final stats for the day that just ended
-            await SavePendingDataAsync();
-
-            // Reset for new day
+            var currentDate = DateTime.Today.ToString("yyyy-MM-dd");
+            
+            // Double-check if we actually need to roll over
             lock (_statsLock)
             {
-                _todayStats = DailyStats.CreateForToday();
-                _currentHourStats = HourlyStats.CreateEmpty(_todayStats.Date, DateTime.Now.Hour);
-                _lastKeyPressed = string.Empty;
+                if (_todayStats.Date == currentDate)
+                {
+                    _logger.LogDebug("Date already matches current date {Date}, no rollover needed", currentDate);
+                    return;
+                }
+            }
+
+            _logger.LogInformation("Midnight rollover confirmed - transitioning from {OldDate} to {NewDate}", _todayStats.Date, currentDate);
+
+            // The actual rollover will happen via EnsureCurrentDateStats on the next operation
+            // Force it to happen now by triggering an update
+            lock (_statsLock)
+            {
+                EnsureCurrentDateStats();
             }
 
             _keyFrequency.Clear();
@@ -592,7 +769,8 @@ public class DataLoggerService : IDisposable
         // Save any pending data before disposing
         try
         {
-            SavePendingDataAsync().Wait(TimeSpan.FromSeconds(5));
+            // Use GetAwaiter().GetResult() instead of Wait() to avoid deadlock
+            SavePendingDataAsync().GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {

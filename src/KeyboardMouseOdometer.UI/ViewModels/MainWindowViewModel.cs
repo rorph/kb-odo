@@ -65,6 +65,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private PlotModel monthlyScrollChart = new();
+    
+    // Data grid collections
+    [ObservableProperty]
+    private ObservableCollection<DailyStatsSummary> dailyStats = new();
+    
+    [ObservableProperty]
+    private ObservableCollection<WeeklyStatsSummary> weeklyStats = new();
+    
+    [ObservableProperty]
+    private ObservableCollection<MonthlyStatsSummary> monthlyStats = new();
+    
+    // Visualization collections (separate from grid data to prevent sorting issues)
+    [ObservableProperty]
+    private ObservableCollection<DailyStatsSummary> weeklyVisualizationData = new();
+    
+    [ObservableProperty]
+    private ObservableCollection<DailyStatsSummary> monthlyVisualizationData = new();
+    
+    [ObservableProperty]
+    private WeeklyStatsSummary? selectedWeeklyItem;
+    
+    [ObservableProperty]
+    private MonthlyStatsSummary? selectedMonthlyItem;
 
     // Settings properties
     [ObservableProperty]
@@ -90,6 +113,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string distanceUnit = "metric";
+
+    private string heatmapColorScheme = "Classic";
+    
+    public string HeatmapColorScheme
+    {
+        get => heatmapColorScheme;
+        set
+        {
+            if (SetProperty(ref heatmapColorScheme, value))
+            {
+                _logger.LogInformation("Heatmap color scheme changed from {OldScheme} to {NewScheme}", heatmapColorScheme, value);
+                
+                // Update the HeatmapViewModel when the color scheme changes
+                if (HeatmapViewModel != null)
+                {
+                    HeatmapViewModel.ColorScheme = value;
+                    _logger.LogDebug("Updated HeatmapViewModel with new color scheme: {ColorScheme}", value);
+                }
+            }
+        }
+    }
 
     [ObservableProperty]
     private int databaseRetentionDays;
@@ -122,6 +166,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private HeatmapViewModel? heatmapViewModel;
 
+    [ObservableProperty]
+    private string applicationVersion = "";
+
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
         DatabaseService databaseService,
@@ -139,6 +186,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         // Load settings
         LoadSettings();
+
+        // Set application version
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        var version = assembly.GetName().Version;
+        ApplicationVersion = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
 
         // Subscribe to data updates
         _dataLoggerService.StatsUpdated += OnStatsUpdated;
@@ -174,6 +226,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         MinimizeToTray = _configuration.MinimizeToTray;
         StartWithWindows = _configuration.StartWithWindows;
         DistanceUnit = _configuration.DistanceUnit;
+        HeatmapColorScheme = _configuration.HeatmapColorScheme;
         DatabaseRetentionDays = _configuration.DatabaseRetentionDays;
         
         _logger.LogInformation($"Settings loaded - TrackKeystrokes: {TrackKeystrokes}, ShowToolbar: {ShowToolbar}, MinimizeToTray: {MinimizeToTray}");
@@ -262,7 +315,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             MarkerSize = 3,
             Color = lineColor,
             StrokeThickness = 2,
-            MarkerFill = lineColor
+            MarkerFill = lineColor,
+            TrackerFormatString = "{0}\n{1:HH:mm}: {2:0.##} " + yAxisTitle
         };
         
         plotModel.Series.Add(series);
@@ -317,7 +371,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             MarkerSize = 4,
             Color = lineColor,
             StrokeThickness = 2,
-            MarkerFill = lineColor
+            MarkerFill = lineColor,
+            TrackerFormatString = "{0}\n{1:MM/dd}: {2:0.##} " + yAxisTitle
         };
         
         plotModel.Series.Add(series);
@@ -366,7 +421,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 UpdateHourlyCharts(todayHourlyStats);
             });
             
-            // Update weekly charts
+            // Update weekly data grid and charts
+            await UpdateWeeklyDataAsync();
+            
+            // Update monthly data grid and charts
+            await UpdateMonthlyDataAsync();
+            
+            // Update daily data grid
+            await UpdateDailyDataAsync();
+            
+            // Update weekly charts (legacy - keeping for backward compatibility)
             var weekStart = today.AddDays(-(int)today.DayOfWeek);
             var weekEnd = weekStart.AddDays(6);
             var weeklyStats = await _databaseService.GetDailyStatsRangeAsync(weekStart, weekEnd);
@@ -557,6 +621,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _configuration.MinimizeToTray = MinimizeToTray;
             _configuration.StartWithWindows = StartWithWindows;
             _configuration.DistanceUnit = DistanceUnit;
+            _configuration.HeatmapColorScheme = HeatmapColorScheme;
             _configuration.DatabaseRetentionDays = DatabaseRetentionDays;
 
             _logger.LogInformation($"Configuration values before validation: DistanceUnit='{DistanceUnit}', DatabaseRetentionDays={DatabaseRetentionDays}");
@@ -611,6 +676,286 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Update weekly data grid and visualization
+    /// </summary>
+    private async Task UpdateWeeklyDataAsync()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            
+            // Get last 8 weeks of data for weekly aggregation
+            var startDate = today.AddDays(-(int)today.DayOfWeek).AddDays(-7 * 7); // 8 weeks back
+            var endDate = today;
+            
+            var allData = await _databaseService.GetDailyStatsRangeAsync(startDate, endDate);
+            
+            // For current week visualization (daily data)
+            var currentWeekStart = today.AddDays(-(int)today.DayOfWeek);
+            var currentWeekEnd = currentWeekStart.AddDays(6);
+            var currentWeekData = allData.Where(s => 
+            {
+                var date = DateTime.Parse(s.Date).Date;
+                return date >= currentWeekStart && date <= currentWeekEnd;
+            }).ToList();
+            
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                WeeklyStats.Clear();
+                WeeklyVisualizationData.Clear();
+                
+                // Create weekly aggregated data for the table
+                var weeklyGroups = allData
+                    .Select(s => new { Data = s, Date = DateTime.Parse(s.Date).Date })
+                    .GroupBy(x => new { Year = x.Date.Year, Week = GetWeekOfYear(x.Date) })
+                    .OrderByDescending(g => g.Key.Year).ThenByDescending(g => g.Key.Week)
+                    .Take(8) // Show last 8 weeks
+                    .ToList();
+
+                // Find max values for normalization across all weeks
+                var allWeeklyTotals = weeklyGroups.Select(g => new
+                {
+                    KeyCount = g.Sum(x => x.Data.KeyCount),
+                    MouseDistance = g.Sum(x => x.Data.MouseDistance),
+                    ScrollDistance = g.Sum(x => x.Data.ScrollDistance)
+                }).ToList();
+                
+                var maxKeys = allWeeklyTotals.Any() ? allWeeklyTotals.Max(w => w.KeyCount) : 1;
+                var maxMouse = allWeeklyTotals.Any() ? allWeeklyTotals.Max(w => w.MouseDistance) : 1;
+                var maxScroll = allWeeklyTotals.Any() ? allWeeklyTotals.Max(w => w.ScrollDistance) : 1;
+
+                foreach (var weekGroup in weeklyGroups)
+                {
+                    var firstDayOfWeek = weekGroup.Min(x => x.Date);
+                    // Adjust to get the start of the week (Sunday)
+                    var weekStart = firstDayOfWeek.AddDays(-(int)firstDayOfWeek.DayOfWeek);
+                    
+                    var totalKeys = weekGroup.Sum(x => x.Data.KeyCount);
+                    var totalMouseDistance = weekGroup.Sum(x => x.Data.MouseDistance);
+                    var totalScrollDistance = weekGroup.Sum(x => x.Data.ScrollDistance);
+                    var totalClicks = weekGroup.Sum(x => x.Data.LeftClicks + x.Data.RightClicks + x.Data.MiddleClicks);
+                    
+                    var weekSummary = new WeeklyStatsSummary
+                    {
+                        WeekStart = weekStart,
+                        KeyCount = totalKeys,
+                        MouseDistance = totalMouseDistance,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(totalMouseDistance, DistanceUnit),
+                        ScrollDistance = totalScrollDistance,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(totalScrollDistance, DistanceUnit),
+                        TotalClicks = totalClicks,
+                        KeyCountNormalized = maxKeys > 0 ? totalKeys / (double)maxKeys : 0,
+                        MouseDistanceNormalized = maxMouse > 0 ? totalMouseDistance / maxMouse : 0,
+                        ScrollDistanceNormalized = maxScroll > 0 ? totalScrollDistance / maxScroll : 0
+                    };
+                    
+                    WeeklyStats.Add(weekSummary);
+                }
+
+                // Create daily visualization data for current week bar chart
+                var maxDailyKeys = currentWeekData.Any() ? currentWeekData.Max(s => s.KeyCount) : 1;
+                var maxDailyMouse = currentWeekData.Any() ? currentWeekData.Max(s => s.MouseDistance) : 1;
+                var maxDailyScroll = currentWeekData.Any() ? currentWeekData.Max(s => s.ScrollDistance) : 1;
+                
+                for (var date = currentWeekStart; date <= currentWeekEnd; date = date.AddDays(1))
+                {
+                    var dayStats = currentWeekData.FirstOrDefault(s => DateTime.Parse(s.Date).Date == date.Date);
+                    
+                    var summary = new DailyStatsSummary
+                    {
+                        Date = date,
+                        KeyCount = dayStats?.KeyCount ?? 0,
+                        MouseDistance = dayStats?.MouseDistance ?? 0,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
+                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
+                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0),
+                        KeyCountNormalized = maxDailyKeys > 0 ? (dayStats?.KeyCount ?? 0) / (double)maxDailyKeys : 0,
+                        MouseDistanceNormalized = maxDailyMouse > 0 ? (dayStats?.MouseDistance ?? 0) / maxDailyMouse : 0,
+                        ScrollDistanceNormalized = maxDailyScroll > 0 ? (dayStats?.ScrollDistance ?? 0) / maxDailyScroll : 0
+                    };
+                    
+                    WeeklyVisualizationData.Add(summary);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update weekly data");
+        }
+    }
+
+    private int GetWeekOfYear(DateTime date)
+    {
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        var calendar = culture.Calendar;
+        var calendarWeekRule = culture.DateTimeFormat.CalendarWeekRule;
+        var firstDayOfWeek = culture.DateTimeFormat.FirstDayOfWeek;
+        return calendar.GetWeekOfYear(date, calendarWeekRule, firstDayOfWeek);
+    }
+    
+    /// <summary>
+    /// Update monthly data grid and visualization
+    /// </summary>
+    private async Task UpdateMonthlyDataAsync()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            
+            // Get last 12 months of data for monthly aggregation
+            var startDate = new DateTime(today.Year, today.Month, 1).AddMonths(-11); // 12 months back
+            var endDate = today;
+            
+            var allData = await _databaseService.GetDailyStatsRangeAsync(startDate, endDate);
+            
+            // For current month visualization (daily data)
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var currentMonthEnd = currentMonthStart.AddMonths(1).AddDays(-1);
+            var currentMonthData = allData.Where(s => 
+            {
+                var date = DateTime.Parse(s.Date).Date;
+                return date >= currentMonthStart && date <= currentMonthEnd;
+            }).ToList();
+            
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                MonthlyStats.Clear();
+                MonthlyVisualizationData.Clear();
+                
+                // Create monthly aggregated data for the table
+                var monthlyGroups = allData
+                    .Select(s => new { Data = s, Date = DateTime.Parse(s.Date).Date })
+                    .GroupBy(x => new { x.Date.Year, x.Date.Month })
+                    .OrderByDescending(g => g.Key.Year).ThenByDescending(g => g.Key.Month)
+                    .Take(12) // Show last 12 months
+                    .ToList();
+
+                // Find max values for normalization across all months
+                var allMonthlyTotals = monthlyGroups.Select(g => new
+                {
+                    KeyCount = g.Sum(x => x.Data.KeyCount),
+                    MouseDistance = g.Sum(x => x.Data.MouseDistance),
+                    ScrollDistance = g.Sum(x => x.Data.ScrollDistance)
+                }).ToList();
+                
+                var maxKeys = allMonthlyTotals.Any() ? allMonthlyTotals.Max(m => m.KeyCount) : 1;
+                var maxMouse = allMonthlyTotals.Any() ? allMonthlyTotals.Max(m => m.MouseDistance) : 1;
+                var maxScroll = allMonthlyTotals.Any() ? allMonthlyTotals.Max(m => m.ScrollDistance) : 1;
+
+                foreach (var monthGroup in monthlyGroups)
+                {
+                    var monthStart = new DateTime(monthGroup.Key.Year, monthGroup.Key.Month, 1);
+                    
+                    var totalKeys = monthGroup.Sum(x => x.Data.KeyCount);
+                    var totalMouseDistance = monthGroup.Sum(x => x.Data.MouseDistance);
+                    var totalScrollDistance = monthGroup.Sum(x => x.Data.ScrollDistance);
+                    var totalClicks = monthGroup.Sum(x => x.Data.LeftClicks + x.Data.RightClicks + x.Data.MiddleClicks);
+                    
+                    var monthSummary = new MonthlyStatsSummary
+                    {
+                        MonthStart = monthStart,
+                        KeyCount = totalKeys,
+                        MouseDistance = totalMouseDistance,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(totalMouseDistance, DistanceUnit),
+                        ScrollDistance = totalScrollDistance,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(totalScrollDistance, DistanceUnit),
+                        TotalClicks = totalClicks,
+                        KeyCountNormalized = maxKeys > 0 ? totalKeys / (double)maxKeys : 0,
+                        MouseDistanceNormalized = maxMouse > 0 ? totalMouseDistance / maxMouse : 0,
+                        ScrollDistanceNormalized = maxScroll > 0 ? totalScrollDistance / maxScroll : 0
+                    };
+                    
+                    MonthlyStats.Add(monthSummary);
+                }
+
+                // Create daily visualization data for current month bar chart
+                var maxDailyKeys = currentMonthData.Any() ? currentMonthData.Max(s => s.KeyCount) : 1;
+                var maxDailyMouse = currentMonthData.Any() ? currentMonthData.Max(s => s.MouseDistance) : 1;
+                var maxDailyScroll = currentMonthData.Any() ? currentMonthData.Max(s => s.ScrollDistance) : 1;
+                
+                for (var date = currentMonthStart; date <= currentMonthEnd && date <= today; date = date.AddDays(1))
+                {
+                    var dayStats = currentMonthData.FirstOrDefault(s => DateTime.Parse(s.Date).Date == date.Date);
+                    
+                    var summary = new DailyStatsSummary
+                    {
+                        Date = date,
+                        KeyCount = dayStats?.KeyCount ?? 0,
+                        MouseDistance = dayStats?.MouseDistance ?? 0,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
+                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
+                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0),
+                        KeyCountNormalized = maxDailyKeys > 0 ? (dayStats?.KeyCount ?? 0) / (double)maxDailyKeys : 0,
+                        MouseDistanceNormalized = maxDailyMouse > 0 ? (dayStats?.MouseDistance ?? 0) / maxDailyMouse : 0,
+                        ScrollDistanceNormalized = maxDailyScroll > 0 ? (dayStats?.ScrollDistance ?? 0) / maxDailyScroll : 0
+                    };
+                    
+                    MonthlyVisualizationData.Add(summary);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update monthly data");
+        }
+    }
+    
+    /// <summary>
+    /// Update daily data grid with last 30 days
+    /// </summary>
+    private async Task UpdateDailyDataAsync()
+    {
+        try
+        {
+            var today = DateTime.Today;
+            
+            // Get last 30 days of data
+            var startDate = today.AddDays(-29); // 30 days including today
+            var endDate = today;
+            
+            var dailyData = await _databaseService.GetDailyStatsRangeAsync(startDate, endDate);
+            
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                DailyStats.Clear();
+                
+                // Create data for each day, including days with no activity
+                for (var date = startDate; date <= endDate; date = date.AddDays(1))
+                {
+                    var dayStats = dailyData.FirstOrDefault(s => DateTime.Parse(s.Date).Date == date.Date);
+                    
+                    var summary = new DailyStatsSummary
+                    {
+                        Date = date,
+                        KeyCount = dayStats?.KeyCount ?? 0,
+                        MouseDistance = dayStats?.MouseDistance ?? 0,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
+                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
+                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0)
+                    };
+                    
+                    DailyStats.Add(summary);
+                }
+                
+                // Reverse the order so most recent day is first
+                var reversedStats = DailyStats.Reverse().ToList();
+                DailyStats.Clear();
+                foreach (var stat in reversedStats)
+                {
+                    DailyStats.Add(stat);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update daily data");
+        }
+    }
+    
     /// <summary>
     /// Refresh lifetime statistics (can be called when tab is selected)
     /// </summary>

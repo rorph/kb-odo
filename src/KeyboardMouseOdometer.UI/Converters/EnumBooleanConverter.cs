@@ -19,7 +19,7 @@ namespace KeyboardMouseOdometer.UI.Converters
             if (parameter == null || value == null || !(bool)value)
                 return Binding.DoNothing;
 
-            return Enum.Parse(targetType, parameter.ToString());
+            return Enum.Parse(targetType, parameter.ToString()!);
         }
     }
 }

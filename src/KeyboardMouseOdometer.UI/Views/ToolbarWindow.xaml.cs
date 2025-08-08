@@ -3,6 +3,7 @@ using KeyboardMouseOdometer.Core.Models;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Shell;
+using System.Windows.Forms;
 
 namespace KeyboardMouseOdometer.UI.Views;
 
@@ -44,24 +45,46 @@ public partial class ToolbarWindow : Window
 
     private void PositionWindow()
     {
-        // Get screen dimensions
-        var screenWidth = SystemParameters.PrimaryScreenWidth;
-        var screenHeight = SystemParameters.PrimaryScreenHeight;
-        var workAreaHeight = SystemParameters.WorkArea.Height;
+        // Try to find the saved monitor
+        Screen? targetScreen = null;
+        if (!string.IsNullOrEmpty(_configuration.ToolbarMonitorDeviceName))
+        {
+            targetScreen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _configuration.ToolbarMonitorDeviceName);
+        }
         
-        // Use saved position if available, otherwise center and position above taskbar
+        // Fall back to primary screen if saved monitor not found
+        if (targetScreen == null)
+        {
+            targetScreen = Screen.PrimaryScreen ?? Screen.AllScreens.FirstOrDefault();
+        }
+        
+        if (targetScreen == null)
+        {
+            // If still no screen found, skip positioning
+            return;
+        }
+
+        var screenBounds = targetScreen.Bounds;
+        var workAreaBounds = targetScreen.WorkingArea;
+        
+        // Use saved position if available and valid for the target screen
         if (_configuration.ToolbarLeft >= 0 && _configuration.ToolbarTop >= 0)
         {
-            Left = Math.Min(_configuration.ToolbarLeft, screenWidth - Width);
-            Top = Math.Min(_configuration.ToolbarTop, workAreaHeight - Height);
-            System.Diagnostics.Debug.WriteLine($"Restored toolbar position: {Left},{Top}");
+            // Check if saved position is within the target screen bounds
+            var savedLeft = _configuration.ToolbarLeft;
+            var savedTop = _configuration.ToolbarTop;
+            
+            // Ensure window is within screen bounds
+            Left = Math.Max(screenBounds.Left, Math.Min(savedLeft, screenBounds.Right - Width));
+            Top = Math.Max(screenBounds.Top, Math.Min(savedTop, workAreaBounds.Bottom - Height));
+            System.Diagnostics.Debug.WriteLine($"Restored toolbar position: {Left},{Top} on monitor {targetScreen.DeviceName}");
         }
         else
         {
-            // Center horizontally, position near bottom but above taskbar
-            Left = (screenWidth - Width) / 2;
-            Top = workAreaHeight - Height - 10; // 10px margin from taskbar
-            System.Diagnostics.Debug.WriteLine($"Default toolbar position: {Left},{Top}");
+            // Center horizontally on target screen, position near bottom but above taskbar
+            Left = screenBounds.Left + (screenBounds.Width - Width) / 2;
+            Top = workAreaBounds.Bottom - Height - 10; // 10px margin from taskbar
+            System.Diagnostics.Debug.WriteLine($"Default toolbar position: {Left},{Top} on monitor {targetScreen.DeviceName}");
         }
     }
 
@@ -84,6 +107,14 @@ public partial class ToolbarWindow : Window
         System.Diagnostics.Debug.WriteLine($"Toolbar position changed: {Left},{Top}");
         _configuration.ToolbarLeft = Left;
         _configuration.ToolbarTop = Top;
+        
+        // Save the monitor the toolbar is currently on
+        var currentScreen = Screen.FromPoint(new System.Drawing.Point((int)(Left + Width/2), (int)(Top + Height/2)));
+        if (currentScreen != null)
+        {
+            _configuration.ToolbarMonitorDeviceName = currentScreen.DeviceName;
+        }
+        
         SaveConfiguration();
     }
     

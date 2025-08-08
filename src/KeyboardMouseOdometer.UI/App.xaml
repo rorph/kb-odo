@@ -223,6 +223,27 @@
                 </Style.Triggers>
             </Style>
             
+            <!-- OxyPlot Chart Style -->
+            <Style TargetType="{x:Type oxy:PlotView}" xmlns:oxy="http://oxyplot.org/wpf">
+                <Setter Property="DefaultTrackerTemplate">
+                    <Setter.Value>
+                        <ControlTemplate>
+                            <Border Background="{DynamicResource TooltipBackgroundBrush}" 
+                                    BorderBrush="{DynamicResource TooltipBorderBrush}" 
+                                    BorderThickness="1" 
+                                    CornerRadius="4"
+                                    Opacity="0.95">
+                                <TextBlock Text="{Binding}" 
+                                           Margin="6,4" 
+                                           Foreground="{DynamicResource TooltipForegroundBrush}"
+                                           FontSize="12"
+                                           FontFamily="Segoe UI"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            
             <!-- System Tray Context Menu Template -->
             <ContextMenu x:Key="AppTaskbarContextMenu">
                 <MenuItem Header="Open Dashboard" Click="OpenDashboard_Click"/>

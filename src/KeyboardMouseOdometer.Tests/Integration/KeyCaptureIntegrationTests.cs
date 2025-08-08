@@ -7,6 +7,7 @@ using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -30,8 +31,8 @@ namespace KeyboardMouseOdometer.Tests.Integration
             _configuration = new Configuration
             {
                 DatabasePath = _testDbPath,
-                DataFlushIntervalSeconds = 1,
-                ChartUpdateIntervalSeconds = 5
+                DatabaseSaveIntervalMs = 1000,  // Save every 1 second for tests
+                UIUpdateIntervalMs = 100        // Fast UI updates for tests
             };
 
             _databaseService = new DatabaseService(_dbLoggerMock.Object, _testDbPath);
@@ -39,32 +40,29 @@ namespace KeyboardMouseOdometer.Tests.Integration
             _dataLoggerService = new DataLoggerService(_dataLoggerMock.Object, _databaseService, _configuration, keyCodeMapper);
         }
 
-        [Fact(Skip = "Temporarily skipped due to test infrastructure issues")]
+        [Fact]
         public async Task KeyPress_CapturedAndStored_AppearsInDatabase()
         {
             // Arrange
             await _databaseService.InitializeAsync();
             await _dataLoggerService.InitializeAsync();
-            var keyEvent = new InputEvent
-            {
-                EventType = InputEventType.KeyPress,
-                KeyIdentifier = "A",
-                Timestamp = DateTime.Now
-            };
 
             // Act
-            _dataLoggerService.LogInputEvent(keyEvent);
-            await Task.Delay(1500); // Wait for flush interval
-            await _dataLoggerService.FlushAsync();
+            _dataLoggerService.LogKeyPress("A");
+            await Task.Delay(1500); // Wait for save timer
+            
+            // Force save of pending data
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var hour = DateTime.Now.Hour;
 
-            // Assert
-            var todayStats = await _databaseService.GetTodayKeyStatsAsync();
-            Assert.NotNull(todayStats);
-            Assert.True(todayStats.ContainsKey("A"));
-            Assert.True(todayStats["A"] > 0);
+            // Assert - check database directly
+            var keyStats = await _databaseService.GetKeyStatsAsync(today, hour);
+            Assert.NotNull(keyStats);
+            Assert.True(keyStats.ContainsKey("A"));
+            Assert.True(keyStats["A"] > 0);
         }
 
-        [Fact(Skip = "Temporarily skipped due to test infrastructure issues")]
+        [Fact]
         public async Task MultipleKeyPresses_Aggregated_CorrectCounts()
         {
             // Arrange
@@ -75,26 +73,23 @@ namespace KeyboardMouseOdometer.Tests.Integration
             // Act
             foreach (var key in keys)
             {
-                var keyEvent = new InputEvent
-                {
-                    EventType = InputEventType.KeyPress,
-                    KeyIdentifier = key,
-                    Timestamp = DateTime.Now
-                };
-                _dataLoggerService.LogInputEvent(keyEvent);
+                _dataLoggerService.LogKeyPress(key);
             }
             
-            await Task.Delay(1500); // Wait for flush interval
-            await _dataLoggerService.FlushAsync();
+            await Task.Delay(1500); // Wait for save timer
+            
+            // Get stats for current hour
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var hour = DateTime.Now.Hour;
 
             // Assert
-            var todayStats = await _databaseService.GetTodayKeyStatsAsync();
-            Assert.Equal(3, todayStats["A"]);
-            Assert.Equal(2, todayStats["B"]);
-            Assert.Equal(1, todayStats["C"]);
+            var keyStats = await _databaseService.GetKeyStatsAsync(today, hour);
+            Assert.Equal(3, keyStats["A"]);
+            Assert.Equal(2, keyStats["B"]);
+            Assert.Equal(1, keyStats["C"]);
         }
 
-        [Fact(Skip = "Temporarily skipped due to test infrastructure issues")]
+        [Fact]
         public async Task KeyStats_HourlyAggregation_CorrectHourlyData()
         {
             // Arrange
@@ -106,16 +101,10 @@ namespace KeyboardMouseOdometer.Tests.Integration
             // Act
             for (int i = 0; i < 10; i++)
             {
-                var keyEvent = new InputEvent
-                {
-                    EventType = InputEventType.KeyPress,
-                    KeyIdentifier = "Space",
-                    Timestamp = now
-                };
-                _dataLoggerService.LogInputEvent(keyEvent);
+                _dataLoggerService.LogKeyPress("Space");
             }
             
-            await _dataLoggerService.FlushAsync();
+            await Task.Delay(1500); // Wait for save timer
 
             // Assert
             var hourlyStats = await _databaseService.GetHourlyStatsAsync(now.ToString("yyyy-MM-dd"));
@@ -254,7 +243,7 @@ namespace KeyboardMouseOdometer.Tests.Integration
             }
         }
 
-        [Fact(Skip = "Temporarily skipped due to test infrastructure issues")]
+        [Fact]
         public async Task ConcurrentKeyPresses_ThreadSafety_NoDataLoss()
         {
             // Arrange
@@ -264,7 +253,7 @@ namespace KeyboardMouseOdometer.Tests.Integration
             var keyPressCount = 100;
             var threadCount = 10;
 
-            // Act
+            // Act - Simulate concurrent key presses from multiple threads
             for (int thread = 0; thread < threadCount; thread++)
             {
                 var threadId = thread;
@@ -272,28 +261,111 @@ namespace KeyboardMouseOdometer.Tests.Integration
                 {
                     for (int i = 0; i < keyPressCount; i++)
                     {
-                        var keyEvent = new InputEvent
-                        {
-                            EventType = InputEventType.KeyPress,
-                            KeyIdentifier = $"Thread{threadId}",
-                            Timestamp = DateTime.Now
-                        };
-                        _dataLoggerService.LogInputEvent(keyEvent);
+                        // Use the actual LogKeyPress method
+                        _dataLoggerService.LogKeyPress($"Thread{threadId}");
                     }
                 }));
             }
 
+            // Wait for all threads to complete
             await Task.WhenAll(tasks);
-            await _dataLoggerService.FlushAsync();
+            
+            // Wait for save timer to flush data
+            await Task.Delay(2000); // Wait longer than DatabaseSaveIntervalMs
 
-            // Assert
-            var todayStats = await _databaseService.GetTodayKeyStatsAsync();
+            // Assert - Verify all key presses were recorded
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var hour = DateTime.Now.Hour;
+            var keyStats = await _databaseService.GetKeyStatsAsync(today, hour);
+            
+            Assert.NotNull(keyStats);
+            
+            // Check that each thread's keys were properly counted
             for (int thread = 0; thread < threadCount; thread++)
             {
                 var key = $"Thread{thread}";
-                Assert.True(todayStats.ContainsKey(key), $"Missing data for {key}");
-                Assert.Equal(keyPressCount, todayStats[key]);
+                Assert.True(keyStats.ContainsKey(key), $"Missing data for {key}");
+                Assert.Equal(keyPressCount, keyStats[key]);
             }
+            
+            // Verify total count
+            var totalExpected = keyPressCount * threadCount;
+            var totalActual = keyStats.Values.Sum();
+            Assert.Equal(totalExpected, totalActual);
+        }
+
+        [Fact]
+        public async Task StressTest_MassiveConcurrentOperations_DataIntegrity()
+        {
+            // Arrange
+            await _databaseService.InitializeAsync();
+            await _dataLoggerService.InitializeAsync();
+            var tasks = new List<Task>();
+            var random = new Random();
+            
+            // Simulate realistic typing patterns
+            var commonKeys = new[] { "A", "E", "T", "O", "I", "N", "S", "H", "R", "Space" };
+            var operationsPerThread = 50;
+            var threadCount = 20;
+
+            // Act - Simulate multiple users typing simultaneously
+            for (int thread = 0; thread < threadCount; thread++)
+            {
+                var threadId = thread;
+                tasks.Add(Task.Run(async () =>
+                {
+                    for (int i = 0; i < operationsPerThread; i++)
+                    {
+                        // Random key from common keys
+                        var key = commonKeys[random.Next(commonKeys.Length)];
+                        _dataLoggerService.LogKeyPress(key);
+                        
+                        // Simulate typing speed variation
+                        await Task.Delay(random.Next(10, 50));
+                        
+                        // Occasionally log mouse events too
+                        if (i % 5 == 0)
+                        {
+                            _dataLoggerService.LogMouseClick(MouseButton.Left);
+                            // LogMouseMove takes distance in pixels, not x,y coordinates
+                            var distance = Math.Sqrt(Math.Pow(random.Next(1, 100), 2) + Math.Pow(random.Next(1, 100), 2));
+                            _dataLoggerService.LogMouseMove(distance);
+                        }
+                    }
+                }));
+            }
+
+            // Wait for all operations to complete
+            await Task.WhenAll(tasks);
+            
+            // Wait for final save
+            await Task.Delay(2500);
+
+            // Assert - Verify data integrity
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var hour = DateTime.Now.Hour;
+            var keyStats = await _databaseService.GetKeyStatsAsync(today, hour);
+            var dailyStats = await _databaseService.GetDailyStatsAsync(today);
+            
+            Assert.NotNull(keyStats);
+            Assert.NotNull(dailyStats);
+            
+            // Verify some keys were recorded
+            Assert.True(keyStats.Count > 0, "No key statistics recorded");
+            
+            // Verify common keys have reasonable counts
+            foreach (var key in commonKeys)
+            {
+                if (keyStats.ContainsKey(key))
+                {
+                    Assert.True(keyStats[key] > 0, $"Key {key} should have been pressed");
+                }
+            }
+            
+            // Verify daily stats are reasonable
+            Assert.True(dailyStats.KeyCount > 0, "Daily key count should be greater than 0");
+            Assert.True(dailyStats.LeftClicks >= threadCount * (operationsPerThread / 5), "Mouse clicks not properly recorded");
+            Assert.True(dailyStats.MouseDistance > 0, "Mouse distance should be greater than 0");
         }
 
         public void Dispose()

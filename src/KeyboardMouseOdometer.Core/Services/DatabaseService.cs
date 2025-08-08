@@ -1,6 +1,8 @@
 using KeyboardMouseOdometer.Core.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.IO;
 
 namespace KeyboardMouseOdometer.Core.Services;
 
@@ -35,16 +37,40 @@ public class DatabaseService : IDisposable
     {
         try
         {
+            _logger.LogInformation("Initializing database with connection: {ConnectionString}", _connectionString);
             _connection = new SqliteConnection(_connectionString);
             await _connection.OpenAsync();
+            _logger.LogDebug("Database connection opened successfully");
+
+            // Enable WAL mode for better reliability and concurrent access
+            using (var cmd = _connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA journal_mode=WAL";
+                var walResult = await cmd.ExecuteScalarAsync();
+                _logger.LogInformation("Database journal mode set to: {JournalMode}", walResult);
+            }
+
+            // Enable synchronous mode for data safety
+            using (var cmd = _connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA synchronous=NORMAL";
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Set busy timeout to handle concurrent access
+            using (var cmd = _connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA busy_timeout=5000";
+                await cmd.ExecuteNonQueryAsync();
+            }
 
             await CreateTablesAsync();
-            _logger.LogInformation("Database initialized successfully");
+            _logger.LogInformation("Database initialized successfully with WAL mode");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize database");
-            throw;
+            _logger.LogError(ex, "Failed to initialize database with connection string: {ConnectionString}", _connectionString);
+            throw new InvalidOperationException($"Database initialization failed: {ex.Message}", ex);
         }
     }
 
@@ -164,6 +190,13 @@ public class DatabaseService : IDisposable
                 await SetDatabaseVersionAsync(2);
             }
 
+            // Migration 3: Add aggregation views for simpler architecture
+            if (currentVersion < 3)
+            {
+                await MigrateToVersion3Async();
+                await SetDatabaseVersionAsync(3);
+            }
+
             // Validate schema consistency after migrations
             await ValidateSchemaConsistencyAsync();
 
@@ -247,6 +280,94 @@ public class DatabaseService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Migration to version 3: Add aggregation views for simpler architecture
+    /// </summary>
+    private async Task MigrateToVersion3Async()
+    {
+        try
+        {
+            _logger.LogInformation("Migrating database to version 3 (aggregation views)");
+            
+            // Drop existing views if they exist (to recreate with latest schema)
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS weekly_stats");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS monthly_stats");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS lifetime_stats_view");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS today_hourly_stats");
+            
+            // Create weekly stats view
+            var createWeeklyView = @"
+                CREATE VIEW weekly_stats AS
+                SELECT 
+                    date,
+                    key_count,
+                    mouse_distance,
+                    left_clicks,
+                    right_clicks,
+                    middle_clicks,
+                    scroll_distance,
+                    (left_clicks + right_clicks + middle_clicks) as total_clicks
+                FROM daily_stats
+                WHERE date >= date('now', '-7 days')
+                ORDER BY date";
+            await ExecuteSqlAsync(createWeeklyView);
+            
+            // Create monthly stats view
+            var createMonthlyView = @"
+                CREATE VIEW monthly_stats AS
+                SELECT 
+                    date,
+                    key_count,
+                    mouse_distance,
+                    left_clicks,
+                    right_clicks,
+                    middle_clicks,
+                    scroll_distance,
+                    (left_clicks + right_clicks + middle_clicks) as total_clicks
+                FROM daily_stats
+                WHERE date >= date('now', 'start of month')
+                ORDER BY date";
+            await ExecuteSqlAsync(createMonthlyView);
+            
+            // Create lifetime stats view
+            var createLifetimeView = @"
+                CREATE VIEW lifetime_stats_view AS
+                SELECT 
+                    SUM(key_count) as total_keys,
+                    SUM(mouse_distance) as total_mouse_distance,
+                    SUM(left_clicks) as total_left_clicks,
+                    SUM(right_clicks) as total_right_clicks,
+                    SUM(middle_clicks) as total_middle_clicks,
+                    SUM(scroll_distance) as total_scroll_distance,
+                    MIN(date) as first_date,
+                    MAX(date) as last_date,
+                    COUNT(DISTINCT date) as total_days
+                FROM daily_stats";
+            await ExecuteSqlAsync(createLifetimeView);
+            
+            // Create today's hourly breakdown view
+            var createTodayHourlyView = @"
+                CREATE VIEW today_hourly_stats AS
+                SELECT 
+                    hour,
+                    key_count,
+                    mouse_distance,
+                    click_count,
+                    scroll_distance
+                FROM hourly_stats
+                WHERE date = date('now')
+                ORDER BY hour";
+            await ExecuteSqlAsync(createTodayHourlyView);
+            
+            _logger.LogInformation("Created aggregation views successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to migrate to version 3");
+            throw;
+        }
+    }
+    
     /// <summary>
     /// Check if a table exists
     /// </summary>
@@ -438,13 +559,124 @@ public class DatabaseService : IDisposable
     }
 
     /// <summary>
-    /// Save or update daily statistics
+    /// Increment stats atomically using UPSERT (INSERT ON CONFLICT UPDATE)
+    /// This eliminates the need for complex rollover logic!
+    /// </summary>
+    public async Task IncrementStatsAsync(
+        string date, 
+        int hour,
+        int keyCount = 0,
+        double mouseDistance = 0,
+        int leftClicks = 0,
+        int rightClicks = 0,
+        int middleClicks = 0,
+        double scrollDistance = 0)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync();
+        try
+        {
+            // Update daily stats with UPSERT
+            var dailySql = @"
+                INSERT INTO daily_stats (date, key_count, mouse_distance, left_clicks, right_clicks, middle_clicks, scroll_distance)
+                VALUES (@date, @keyCount, @mouseDistance, @leftClicks, @rightClicks, @middleClicks, @scrollDistance)
+                ON CONFLICT(date) DO UPDATE SET
+                    key_count = key_count + @keyCount,
+                    mouse_distance = mouse_distance + @mouseDistance,
+                    left_clicks = left_clicks + @leftClicks,
+                    right_clicks = right_clicks + @rightClicks,
+                    middle_clicks = middle_clicks + @middleClicks,
+                    scroll_distance = scroll_distance + @scrollDistance";
+
+            using (var command = _connection.CreateCommand())
+            {
+                command.CommandText = dailySql;
+                command.Transaction = transaction;
+                command.Parameters.AddWithValue("@date", date);
+                command.Parameters.AddWithValue("@keyCount", keyCount);
+                command.Parameters.AddWithValue("@mouseDistance", mouseDistance);
+                command.Parameters.AddWithValue("@leftClicks", leftClicks);
+                command.Parameters.AddWithValue("@rightClicks", rightClicks);
+                command.Parameters.AddWithValue("@middleClicks", middleClicks);
+                command.Parameters.AddWithValue("@scrollDistance", scrollDistance);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // Update hourly stats with UPSERT
+            var hourlySql = @"
+                INSERT INTO hourly_stats (date, hour, key_count, mouse_distance, click_count, scroll_distance)
+                VALUES (@date, @hour, @keyCount, @mouseDistance, @clickCount, @scrollDistance)
+                ON CONFLICT(date, hour) DO UPDATE SET
+                    key_count = key_count + @keyCount,
+                    mouse_distance = mouse_distance + @mouseDistance,
+                    click_count = click_count + @clickCount,
+                    scroll_distance = scroll_distance + @scrollDistance";
+
+            using (var command = _connection.CreateCommand())
+            {
+                command.CommandText = hourlySql;
+                command.Transaction = transaction;
+                command.Parameters.AddWithValue("@date", date);
+                command.Parameters.AddWithValue("@hour", hour);
+                command.Parameters.AddWithValue("@keyCount", keyCount);
+                command.Parameters.AddWithValue("@mouseDistance", mouseDistance);
+                command.Parameters.AddWithValue("@clickCount", leftClicks + rightClicks + middleClicks);
+                command.Parameters.AddWithValue("@scrollDistance", scrollDistance);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Failed to increment stats for {Date} hour {Hour}", date, hour);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Increment key stats for heatmap using UPSERT
+    /// </summary>
+    public async Task IncrementKeyStatsAsync(string date, int hour, string keyIdentifier, int count = 1)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        try
+        {
+            var sql = @"
+                INSERT INTO key_stats (date, hour, key_code, count)
+                VALUES (@date, @hour, @keyIdentifier, @count)
+                ON CONFLICT(date, hour, key_code) DO UPDATE SET
+                    count = count + @count";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("@date", date);
+            command.Parameters.AddWithValue("@hour", hour);
+            command.Parameters.AddWithValue("@keyIdentifier", keyIdentifier);
+            command.Parameters.AddWithValue("@count", count);
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to increment key stats for {Key}", keyIdentifier);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Save or update daily statistics with transaction support
     /// </summary>
     public async Task SaveDailyStatsAsync(DailyStats stats)
     {
         if (_connection == null)
             throw new InvalidOperationException("Database not initialized");
 
+        using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync();
         try
         {
             var sql = @"
@@ -454,6 +686,7 @@ public class DatabaseService : IDisposable
 
             using var command = _connection.CreateCommand();
             command.CommandText = sql;
+            command.Transaction = transaction;
             command.Parameters.AddWithValue("@date", stats.Date);
             command.Parameters.AddWithValue("@keyCount", stats.KeyCount);
             command.Parameters.AddWithValue("@mouseDistance", stats.MouseDistance);
@@ -463,10 +696,12 @@ public class DatabaseService : IDisposable
             command.Parameters.AddWithValue("@scrollDistance", stats.ScrollDistance);
 
             await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
             _logger.LogDebug("Saved daily stats for {Date}", stats.Date);
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Failed to save daily stats for {Date}", stats.Date);
             throw;
         }
@@ -575,7 +810,7 @@ public class DatabaseService : IDisposable
 
         try
         {
-            using var transaction = _connection.BeginTransaction();
+            using var transaction = (SqliteTransaction)_connection.BeginTransaction();
             
             var sql = @"
                 INSERT INTO key_mouse_events 
@@ -689,13 +924,14 @@ public class DatabaseService : IDisposable
     }
 
     /// <summary>
-    /// Save or update hourly statistics
+    /// Save or update hourly statistics with transaction support
     /// </summary>
     public async Task SaveHourlyStatsAsync(string date, int hour, DailyStats stats)
     {
         if (_connection == null)
             throw new InvalidOperationException("Database not initialized");
 
+        using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync();
         try
         {
             var sql = @"
@@ -705,6 +941,7 @@ public class DatabaseService : IDisposable
 
             using var command = _connection.CreateCommand();
             command.CommandText = sql;
+            command.Transaction = transaction;
             command.Parameters.AddWithValue("@date", date);
             command.Parameters.AddWithValue("@hour", hour);
             command.Parameters.AddWithValue("@keyCount", stats.KeyCount);
@@ -715,13 +952,34 @@ public class DatabaseService : IDisposable
             command.Parameters.AddWithValue("@scrollDistance", stats.ScrollDistance);
 
             await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
             _logger.LogDebug("Saved hourly stats for {Date} hour {Hour}", date, hour);
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Failed to save hourly stats for {Date} hour {Hour}", date, hour);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Save or update hourly statistics using HourlyStats object
+    /// </summary>
+    public async Task SaveHourlyStatsAsync(HourlyStats hourlyStats)
+    {
+        var dailyStatsFormat = new DailyStats
+        {
+            Date = hourlyStats.Date,
+            KeyCount = hourlyStats.KeyCount,
+            MouseDistance = hourlyStats.MouseDistance,
+            LeftClicks = hourlyStats.LeftClicks,
+            RightClicks = hourlyStats.RightClicks,
+            MiddleClicks = hourlyStats.MiddleClicks,
+            ScrollDistance = hourlyStats.ScrollDistance
+        };
+
+        await SaveHourlyStatsAsync(hourlyStats.Date, hourlyStats.Hour, dailyStatsFormat);
     }
 
     /// <summary>
@@ -848,7 +1106,7 @@ public class DatabaseService : IDisposable
 
         try
         {
-            using var transaction = _connection.BeginTransaction();
+            using var transaction = (SqliteTransaction)_connection.BeginTransaction();
             
             var sql = @"
                 INSERT OR REPLACE INTO key_stats 
@@ -876,6 +1134,89 @@ public class DatabaseService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save key stats for {Date} hour {Hour}", date, hour);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Save multiple key statistics in batch (for heatmap feature)
+    /// </summary>
+    public async Task SaveKeyStatsBatchAsync(List<KeyStats> keyStatsList)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        if (!keyStatsList.Any()) return;
+
+        try
+        {
+            using var transaction = (SqliteTransaction)_connection.BeginTransaction();
+            
+            var sql = @"
+                INSERT OR REPLACE INTO key_stats 
+                (date, hour, key_code, count)
+                VALUES (@date, @hour, @keyCode, @count)";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Transaction = transaction;
+
+            foreach (var keyStats in keyStatsList)
+            {
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("@date", keyStats.Date);
+                command.Parameters.AddWithValue("@hour", keyStats.Hour);
+                command.Parameters.AddWithValue("@keyCode", keyStats.KeyCode);
+                command.Parameters.AddWithValue("@count", keyStats.Count);
+
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+            _logger.LogDebug("Batch saved {Count} key stats entries", keyStatsList.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to batch save key stats ({Count} entries)", keyStatsList.Count);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get key statistics for a specific date and hour
+    /// </summary>
+    public async Task<Dictionary<string, int>> GetKeyStatsAsync(string date, int hour)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        var results = new Dictionary<string, int>();
+
+        try
+        {
+            var sql = @"
+                SELECT key_code, count
+                FROM key_stats 
+                WHERE date = @date AND hour = @hour";
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("@date", date);
+            command.Parameters.AddWithValue("@hour", hour);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var keyIdentifier = reader.GetString(0);
+                var count = reader.GetInt32(1);
+                results[keyIdentifier] = count;
+            }
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get key stats for {Date} hour {Hour}", date, hour);
             throw;
         }
     }
@@ -1045,6 +1386,69 @@ public class DatabaseService : IDisposable
         {
             _logger.LogError(ex, "Failed to get top {TopN} keys for date range", topN);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Create a backup of the database
+    /// </summary>
+    public async Task<bool> CreateBackupAsync(string backupPath)
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        try
+        {
+            // Ensure backup directory exists
+            var backupDir = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrEmpty(backupDir))
+                Directory.CreateDirectory(backupDir);
+
+            // Use SQLite VACUUM INTO command for safe backup
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = $"VACUUM INTO '{backupPath}'";
+            await cmd.ExecuteNonQueryAsync();
+            
+            _logger.LogInformation("Database backup created at {BackupPath}", backupPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create database backup at {BackupPath}", backupPath);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Perform database integrity check
+    /// </summary>
+    public async Task<bool> CheckIntegrityAsync()
+    {
+        if (_connection == null)
+            throw new InvalidOperationException("Database not initialized");
+
+        try
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "PRAGMA integrity_check";
+            var result = await cmd.ExecuteScalarAsync();
+            
+            var isOk = result?.ToString() == "ok";
+            if (!isOk)
+            {
+                _logger.LogWarning("Database integrity check failed: {Result}", result);
+            }
+            else
+            {
+                _logger.LogDebug("Database integrity check passed");
+            }
+            
+            return isOk;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to perform database integrity check");
+            return false;
         }
     }
 

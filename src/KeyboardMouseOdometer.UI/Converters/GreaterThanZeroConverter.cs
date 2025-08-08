@@ -6,7 +6,7 @@ namespace KeyboardMouseOdometer.UI.Converters
 {
     public class GreaterThanZeroConverter : IValueConverter
     {
-        private static GreaterThanZeroConverter _instance;
+        private static GreaterThanZeroConverter? _instance;
         public static GreaterThanZeroConverter Instance => _instance ??= new GreaterThanZeroConverter();
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)

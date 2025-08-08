@@ -111,9 +111,9 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     
-                    <TextBlock Grid.Column="0" Text="Low" Foreground="#FF0080FF" FontSize="10"/>
+                    <TextBlock x:Name="LowLabel" Grid.Column="0" Text="Low" Foreground="#FF0080FF" FontSize="10"/>
                     
-                    <Rectangle Grid.Column="1" Height="10" Margin="5,0">
+                    <Rectangle x:Name="HeatLegendGradient" Grid.Column="1" Height="10" Margin="5,0">
                         <Rectangle.Fill>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                 <GradientStop Color="#FF0080FF" Offset="0.0"/>
@@ -126,7 +126,7 @@
                         </Rectangle.Fill>
                     </Rectangle>
                     
-                    <TextBlock Grid.Column="2" Text="High" Foreground="#FFFF0000" FontSize="10"/>
+                    <TextBlock x:Name="HighLabel" Grid.Column="2" Text="High" Foreground="#FFFF0000" FontSize="10"/>
                 </Grid>
             </StackPanel>
         </Border>

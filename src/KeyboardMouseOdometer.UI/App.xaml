@@ -12,6 +12,7 @@
             
             <!-- Converters -->
             <converters:EnumBooleanConverter x:Key="EnumBooleanConverter"/>
+            <converters:StringBooleanConverter x:Key="StringBooleanConverter"/>
             <converters:GreaterThanZeroConverter x:Key="GreaterThanZeroConverter"/>
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
             

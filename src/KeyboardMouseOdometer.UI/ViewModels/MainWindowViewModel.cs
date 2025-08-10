@@ -103,6 +103,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool trackScrollWheel;
 
     [ObservableProperty]
+    private bool trackApplicationUsage;
+
+    [ObservableProperty]
     private bool showToolbar;
 
     [ObservableProperty]
@@ -167,6 +170,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private HeatmapViewModel? heatmapViewModel;
 
     [ObservableProperty]
+    private AppUsageViewModel? appUsageViewModel;
+
+    [ObservableProperty]
     private string applicationVersion = "";
 
     public MainWindowViewModel(
@@ -175,6 +181,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         DataLoggerService dataLoggerService,
         Core.Models.Configuration configuration,
         HeatmapViewModel heatmapViewModel,
+        AppUsageViewModel appUsageViewModel,
         ThemeManager themeManager)
     {
         _logger = logger;
@@ -183,6 +190,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _configuration = configuration;
         _themeManager = themeManager;
         HeatmapViewModel = heatmapViewModel;
+        AppUsageViewModel = appUsageViewModel;
 
         // Load settings
         LoadSettings();
@@ -190,7 +198,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Set application version
         var assembly = System.Reflection.Assembly.GetExecutingAssembly();
         var version = assembly.GetName().Version;
-        ApplicationVersion = $"v{version?.Major}.{version?.Minor}.{version?.Build}";
+        // Use version from assembly, fallback to hardcoded if null
+        if (version != null)
+        {
+            ApplicationVersion = $"v{version.Major}.{version.Minor}.{version.Build}";
+            _logger.LogInformation("Application version set to: {Version}", ApplicationVersion);
+        }
+        else
+        {
+            ApplicationVersion = "v1.2.1"; // Fallback version
+            _logger.LogWarning("Could not get version from assembly, using fallback: {Version}", ApplicationVersion);
+        }
 
         // Subscribe to data updates
         _dataLoggerService.StatsUpdated += OnStatsUpdated;
@@ -222,6 +240,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TrackMouseMovement = _configuration.TrackMouseMovement;
         TrackMouseClicks = _configuration.TrackMouseClicks;
         TrackScrollWheel = _configuration.TrackScrollWheel;
+        TrackApplicationUsage = _configuration.TrackApplicationUsage;
         ShowToolbar = _configuration.ShowToolbar;
         MinimizeToTray = _configuration.MinimizeToTray;
         StartWithWindows = _configuration.StartWithWindows;
@@ -271,7 +290,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var plotModel = new PlotModel 
         { 
-            Title = title,
+            // Title removed - using GroupBox header instead
             Background = OxyColors.Transparent,
             PlotAreaBackground = OxyColors.Transparent
         };
@@ -327,7 +346,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var plotModel = new PlotModel 
         { 
-            Title = title,
+            // Title removed - using GroupBox header instead
             Background = OxyColors.Transparent,
             PlotAreaBackground = OxyColors.Transparent
         };
@@ -341,17 +360,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         plotModel.TextColor = textColor;
         plotModel.PlotAreaBorderColor = gridLineColor;
         
-        plotModel.Axes.Add(new DateTimeAxis
+        var dateAxis = new DateTimeAxis
         {
             Position = AxisPosition.Bottom,
-            StringFormat = "MM/dd",
+            StringFormat = "M/d",  // Month/Day format
             Title = "Date",
             TextColor = textColor,
             TicklineColor = gridLineColor,
             MajorGridlineStyle = LineStyle.Solid,
             MajorGridlineColor = gridLineColor,
-            MinorGridlineStyle = LineStyle.None
-        });
+            MinorGridlineStyle = LineStyle.None,
+            IntervalType = DateTimeIntervalType.Days,  // Explicitly set interval type
+            MinimumPadding = 0.01,
+            MaximumPadding = 0.01
+        };
+        plotModel.Axes.Add(dateAxis);
         
         plotModel.Axes.Add(new LinearAxis
         {
@@ -392,6 +415,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // Initial chart update
             await UpdateChartsAsync();
             _lastChartUpdate = DateTime.Now;
+            
+            // Initialize AppUsageViewModel to load application usage data
+            if (AppUsageViewModel != null)
+            {
+                await AppUsageViewModel.InitializeAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -617,6 +646,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _configuration.TrackMouseMovement = TrackMouseMovement;
             _configuration.TrackMouseClicks = TrackMouseClicks;
             _configuration.TrackScrollWheel = TrackScrollWheel;
+            _configuration.TrackApplicationUsage = TrackApplicationUsage;
             _configuration.ShowToolbar = ShowToolbar;
             _configuration.MinimizeToTray = MinimizeToTray;
             _configuration.StartWithWindows = StartWithWindows;
@@ -922,31 +952,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             {
                 DailyStats.Clear();
                 
-                // Create data for each day, including days with no activity
-                for (var date = startDate; date <= endDate; date = date.AddDays(1))
+                // Only add days that have actual data in the database
+                foreach (var dayStats in dailyData.OrderByDescending(s => s.Date))
                 {
-                    var dayStats = dailyData.FirstOrDefault(s => DateTime.Parse(s.Date).Date == date.Date);
+                    var date = DateTime.Parse(dayStats.Date);
                     
                     var summary = new DailyStatsSummary
                     {
                         Date = date,
-                        KeyCount = dayStats?.KeyCount ?? 0,
-                        MouseDistance = dayStats?.MouseDistance ?? 0,
-                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
-                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
-                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
-                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0)
+                        KeyCount = dayStats.KeyCount,
+                        MouseDistance = dayStats.MouseDistance,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats.MouseDistance, DistanceUnit),
+                        ScrollDistance = dayStats.ScrollDistance,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats.ScrollDistance, DistanceUnit),
+                        TotalClicks = dayStats.LeftClicks + dayStats.RightClicks + dayStats.MiddleClicks
                     };
                     
                     DailyStats.Add(summary);
-                }
-                
-                // Reverse the order so most recent day is first
-                var reversedStats = DailyStats.Reverse().ToList();
-                DailyStats.Clear();
-                foreach (var stat in reversedStats)
-                {
-                    DailyStats.Add(stat);
                 }
             });
         }

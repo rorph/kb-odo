@@ -17,8 +17,9 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
   
 - **Advanced User Interface**
   - **Transparent Resizable Toolbar**: Semi-transparent floating toolbar with real-time stats
-  - **Comprehensive Dashboard**: Tabbed interface with Today/Weekly/Monthly/Lifetime/Settings views
+  - **Comprehensive Dashboard**: Tabbed interface with Today/Weekly/Monthly/Lifetime/Applications/Settings views
   - **Interactive Charts**: OxyPlot-powered charts showing usage patterns throughout the day
+  - **Application Usage Tracking**: Monitor time spent in each application (v1.2.1+)
   - **System Tray Integration**: Full system tray operation with context menu
   - **Customizable Settings**: Configurable tracking options and display preferences
   
@@ -40,6 +41,15 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
 
 ### Dashboard
 ![Heatmap](./heatmap.png)
+
+## What's New in v1.2.1
+
+### Application Usage Tracking
+- **NEW**: Track time spent in each application while it has focus
+- View application usage statistics in Today/Weekly/Monthly/Lifetime time ranges
+- Interactive charts showing top applications by usage time
+- Privacy-first design: Application tracking is disabled by default
+- Enable/disable tracking in Settings → Tracking Settings → Track Application Usage
 
 ## Requirements
 
@@ -139,21 +149,119 @@ dotnet test --filter "FullyQualifiedName~DatabaseService"
 
 ## Configuration
 
-The application stores its configuration in `%APPDATA%\KeyboardMouseOdometer\config.json`:
+The application stores its configuration in `%APPDATA%\KeyboardMouseOdometer\config.json`. All settings have sensible defaults and can be modified through the Settings tab in the UI or by editing the JSON file directly.
+
+### Configuration Settings Reference
+
+#### Tracking Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `TrackKeystrokes` | boolean | `true` | Enable/disable keyboard tracking |
+| `TrackMouseMovement` | boolean | `true` | Enable/disable mouse movement tracking |
+| `TrackMouseClicks` | boolean | `true` | Enable/disable mouse click tracking |
+| `TrackScrollWheel` | boolean | `true` | Enable/disable scroll wheel tracking |
+
+#### System Integration
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `StartWithWindows` | boolean | `false` | Launch application at Windows startup |
+| `MinimizeToTray` | boolean | `true` | Minimize to system tray instead of taskbar |
+| `ShowToolbar` | boolean | `true` | Show floating toolbar window |
+| `ToolbarAlwaysOnTop` | boolean | `true` | Keep toolbar above other windows |
+
+#### Database Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `DatabasePath` | string | `"odometer.db"` | Path to SQLite database file |
+| `DatabaseRetentionDays` | integer | `90` | Days to keep data (0 = forever) |
+| `DatabaseSaveIntervalMs` | integer | `30000` | Database save interval in milliseconds |
+| `EnableRawEventLogging` | boolean | `false` | Enable detailed event logging |
+
+#### UI Display Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `ShowLastKeyPressed` | boolean | `true` | Display last pressed key in toolbar |
+| `ShowDailyKeyCount` | boolean | `true` | Display daily key count in toolbar |
+| `ShowDailyMouseDistance` | boolean | `true` | Display daily mouse distance in toolbar |
+| `DistanceUnit` | string | `"metric"` | Distance units: "metric", "imperial", or "pixels" |
+
+#### Toolbar Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `ToolbarWidth` | double | `720` | Toolbar window width in pixels |
+| `ToolbarHeight` | double | `40` | Toolbar window height in pixels |
+| `ToolbarLeft` | double | `-1` | Toolbar X position (-1 = auto-center) |
+| `ToolbarTop` | double | `-1` | Toolbar Y position (-1 = above taskbar) |
+| `ToolbarMonitorDeviceName` | string | `""` | Monitor to display toolbar on (empty = primary) |
+
+#### Main Window Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `MainWindowWidth` | double | `800` | Main window width in pixels |
+| `MainWindowHeight` | double | `600` | Main window height in pixels |
+
+#### Heatmap Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `HeatmapColorScheme` | string | `"Classic"` | Color scheme: "Classic" or "FLIR" thermal |
+
+#### Performance Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `StatisticsUpdateIntervalMs` | integer | `1000` | UI statistics update interval (milliseconds) |
+| `UIUpdateIntervalMs` | integer | `500` | General UI refresh rate (milliseconds) |
+| `MouseMovementThrottleMs` | integer | `100` | Mouse tracking throttle (milliseconds) |
+| `ChartUpdateIntervalSeconds` | integer | `30` | Chart refresh interval (seconds) |
+
+#### Privacy Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `EnableDatabaseEncryption` | boolean | `false` | Enable database encryption (not implemented) |
+| `LogDetailedKeystrokes` | boolean | `false` | Log actual keys in raw events (privacy risk) |
+
+### Example Configuration
 
 ```json
 {
-  "TrackKeyboard": true,
-  "TrackMouse": true,
-  "TrackClicks": true,
-  "TrackScrolling": false,
-  "StartWithWindows": true,
-  "DataRetentionDays": 90,
+  "TrackKeystrokes": true,
+  "TrackMouseMovement": true,
+  "TrackMouseClicks": true,
+  "TrackScrollWheel": true,
+  "StartWithWindows": false,
+  "MinimizeToTray": true,
   "ShowToolbar": true,
-  "ToolbarPosition": "Bottom",
-  "DatabasePath": "%APPDATA%\\KeyboardMouseOdometer\\odometer.db"
+  "ToolbarAlwaysOnTop": true,
+  "DatabasePath": "odometer.db",
+  "DatabaseRetentionDays": 90,
+  "DatabaseSaveIntervalMs": 30000,
+  "EnableRawEventLogging": false,
+  "ShowLastKeyPressed": true,
+  "ShowDailyKeyCount": true,
+  "ShowDailyMouseDistance": true,
+  "DistanceUnit": "metric",
+  "ToolbarWidth": 720,
+  "ToolbarHeight": 40,
+  "ToolbarLeft": -1,
+  "ToolbarTop": -1,
+  "ToolbarMonitorDeviceName": "",
+  "MainWindowWidth": 800,
+  "MainWindowHeight": 600,
+  "HeatmapColorScheme": "Classic",
+  "StatisticsUpdateIntervalMs": 1000,
+  "UIUpdateIntervalMs": 500,
+  "MouseMovementThrottleMs": 100,
+  "ChartUpdateIntervalSeconds": 30,
+  "EnableDatabaseEncryption": false,
+  "LogDetailedKeystrokes": false
 }
 ```
+
+### Important Notes
+
+- **Privacy**: The `LogDetailedKeystrokes` setting should remain `false` in most cases to prevent logging sensitive information like passwords
+- **Performance**: Lower update intervals provide more responsive UI but use more CPU. Default values are optimized for balance
+- **Data Retention**: Set `DatabaseRetentionDays` to `0` to keep data forever, or any positive number for automatic cleanup
+- **Distance Units**: The application automatically scales units based on magnitude (e.g., mm → cm → m → km)
 
 ## Database Schema
 

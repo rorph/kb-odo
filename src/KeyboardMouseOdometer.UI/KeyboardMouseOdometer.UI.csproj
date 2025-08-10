@@ -9,9 +9,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyTitle>Keyboard Mouse Odometer</AssemblyTitle>
     <AssemblyDescription>Windows desktop application for tracking keyboard and mouse usage</AssemblyDescription>
-    <AssemblyVersion>1.1.1.0</AssemblyVersion>
-    <FileVersion>1.1.1.0</FileVersion>
-    <Version>1.1.1</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.0</FileVersion>
+    <Version>1.2.1</Version>
     <StartupObject>KeyboardMouseOdometer.UI.App</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>

@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*:*)",
+      "Bash(dotnet build:*)",
+      "Bash(chmod:*)",
+      "Bash(./nbridge --help)",
+      "Bash(./nbridge --version)",
+      "Bash(./test_nbridge.sh:*)",
+      "Bash(./build.sh:*)",
+      "Bash(make:*)",
+      "Bash(./package.sh:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(dotnet new:*)",
+      "Bash(mkdir:*)",
+      "Bash(dotnet --version)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(chmod:*)",
+      "Bash(./build.sh)",
+      "Bash(./build-windows.sh:*)",
+      "Bash(./make-exe.sh:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(python3:*)",
+      "Bash(./build-exe.sh:*)",
+      "Bash(dotnet run:*)",
+      "Bash(./build-debug-exe.sh:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": []
+  }
+}

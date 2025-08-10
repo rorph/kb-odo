@@ -197,6 +197,13 @@ public class DatabaseService : IDisposable
                 await SetDatabaseVersionAsync(3);
             }
 
+            // Migration 4: Add application usage tracking
+            if (currentVersion < 4)
+            {
+                await MigrateToVersion4Async();
+                await SetDatabaseVersionAsync(4);
+            }
+
             // Validate schema consistency after migrations
             await ValidateSchemaConsistencyAsync();
 
@@ -364,6 +371,105 @@ public class DatabaseService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to migrate to version 3");
+            throw;
+        }
+    }
+    
+    /// <summary>
+    /// Migration to version 4: Add application usage tracking
+    /// </summary>
+    private async Task MigrateToVersion4Async()
+    {
+        try
+        {
+            _logger.LogInformation("Migrating database to version 4 (application usage tracking)");
+            
+            // Create app_usage_stats table for tracking application usage
+            var createAppUsageTable = @"
+                CREATE TABLE IF NOT EXISTS app_usage_stats (
+                    date TEXT,
+                    hour INTEGER,
+                    app_name TEXT,
+                    seconds_used INTEGER DEFAULT 0,
+                    PRIMARY KEY (date, hour, app_name)
+                )";
+            await ExecuteSqlAsync(createAppUsageTable);
+            
+            // Create indexes for efficient queries
+            var createAppUsageIndexes = @"
+                CREATE INDEX IF NOT EXISTS idx_app_usage_date ON app_usage_stats(date);
+                CREATE INDEX IF NOT EXISTS idx_app_usage_app ON app_usage_stats(app_name);
+                CREATE INDEX IF NOT EXISTS idx_app_usage_date_app ON app_usage_stats(date, app_name);";
+            await ExecuteSqlAsync(createAppUsageIndexes);
+            
+            // Drop existing app usage views if they exist
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS app_usage_daily");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS app_usage_weekly");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS app_usage_monthly");
+            await ExecuteSqlAsync("DROP VIEW IF EXISTS app_usage_lifetime");
+            
+            // Create daily app usage view
+            var createDailyAppView = @"
+                CREATE VIEW app_usage_daily AS
+                SELECT 
+                    date,
+                    app_name,
+                    SUM(seconds_used) as total_seconds,
+                    ROUND(SUM(seconds_used) / 3600.0, 2) as total_hours
+                FROM app_usage_stats
+                WHERE date = date('now')
+                GROUP BY date, app_name
+                ORDER BY total_seconds DESC";
+            await ExecuteSqlAsync(createDailyAppView);
+            
+            // Create weekly app usage view
+            var createWeeklyAppView = @"
+                CREATE VIEW app_usage_weekly AS
+                SELECT 
+                    app_name,
+                    SUM(seconds_used) as total_seconds,
+                    ROUND(SUM(seconds_used) / 3600.0, 2) as total_hours,
+                    COUNT(DISTINCT date) as days_used
+                FROM app_usage_stats
+                WHERE date >= date('now', '-7 days')
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            await ExecuteSqlAsync(createWeeklyAppView);
+            
+            // Create monthly app usage view
+            var createMonthlyAppView = @"
+                CREATE VIEW app_usage_monthly AS
+                SELECT 
+                    app_name,
+                    SUM(seconds_used) as total_seconds,
+                    ROUND(SUM(seconds_used) / 3600.0, 2) as total_hours,
+                    COUNT(DISTINCT date) as days_used
+                FROM app_usage_stats
+                WHERE date >= date('now', '-30 days')
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            await ExecuteSqlAsync(createMonthlyAppView);
+            
+            // Create lifetime app usage view
+            var createLifetimeAppView = @"
+                CREATE VIEW app_usage_lifetime AS
+                SELECT 
+                    app_name,
+                    SUM(seconds_used) as total_seconds,
+                    ROUND(SUM(seconds_used) / 3600.0, 2) as total_hours,
+                    COUNT(DISTINCT date) as days_used,
+                    MIN(date) as first_used,
+                    MAX(date) as last_used
+                FROM app_usage_stats
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            await ExecuteSqlAsync(createLifetimeAppView);
+            
+            _logger.LogInformation("Successfully migrated to version 4 with application usage tracking");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to migrate to version 4");
             throw;
         }
     }
@@ -887,6 +993,13 @@ public class DatabaseService : IDisposable
     {
         if (_connection == null)
             throw new InvalidOperationException("Database not initialized");
+
+        // Skip cleanup if retention is 0 or negative (keep forever)
+        if (retentionDays <= 0)
+        {
+            _logger.LogDebug("Skipping data cleanup - retention days is {RetentionDays} (keep forever)", retentionDays);
+            return;
+        }
 
         try
         {
@@ -1449,6 +1562,193 @@ public class DatabaseService : IDisposable
         {
             _logger.LogError(ex, "Failed to perform database integrity check");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Save or update application usage statistics
+    /// </summary>
+    public async Task SaveAppUsageStatsAsync(string date, int hour, string appName, int secondsUsed)
+    {
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT INTO app_usage_stats (date, hour, app_name, seconds_used)
+                VALUES (@date, @hour, @appName, @secondsUsed)
+                ON CONFLICT(date, hour, app_name) DO UPDATE SET
+                    seconds_used = seconds_used + @secondsUsed";
+            
+            command.Parameters.AddWithValue("@date", date);
+            command.Parameters.AddWithValue("@hour", hour);
+            command.Parameters.AddWithValue("@appName", appName);
+            command.Parameters.AddWithValue("@secondsUsed", secondsUsed);
+            
+            await command.ExecuteNonQueryAsync();
+            _logger.LogDebug("Saved app usage for {AppName}: {Seconds}s", appName, secondsUsed);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save app usage stats");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get today's application usage statistics
+    /// </summary>
+    public async Task<List<AppUsageStats>> GetTodayAppUsageAsync()
+    {
+        try
+        {
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT app_name, SUM(seconds_used) as total_seconds
+                FROM app_usage_stats
+                WHERE date = @today
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            command.Parameters.AddWithValue("@today", today);
+            
+            var results = new List<AppUsageStats>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(new AppUsageStats
+                {
+                    AppName = reader.GetString(0),
+                    SecondsUsed = Convert.ToInt32(reader.GetValue(1))
+                });
+            }
+            
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get today's app usage");
+            return new List<AppUsageStats>();
+        }
+    }
+
+    /// <summary>
+    /// Get weekly application usage statistics
+    /// </summary>
+    public async Task<List<AppUsageStats>> GetWeeklyAppUsageAsync()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT app_name, SUM(seconds_used) as total_seconds
+                FROM app_usage_stats
+                WHERE date >= date(@today, '-6 days') AND date <= @today
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            command.Parameters.AddWithValue("@today", DateTime.Today.ToString("yyyy-MM-dd"));
+            
+            var results = new List<AppUsageStats>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(new AppUsageStats
+                {
+                    AppName = reader.GetString(0),
+                    SecondsUsed = Convert.ToInt32(reader.GetValue(1))
+                });
+            }
+            
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get weekly app usage");
+            return new List<AppUsageStats>();
+        }
+    }
+
+    /// <summary>
+    /// Get monthly application usage statistics
+    /// </summary>
+    public async Task<List<AppUsageStats>> GetMonthlyAppUsageAsync()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT app_name, SUM(seconds_used) as total_seconds
+                FROM app_usage_stats
+                WHERE date >= date(@today, '-29 days') AND date <= @today
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            command.Parameters.AddWithValue("@today", DateTime.Today.ToString("yyyy-MM-dd"));
+            
+            var results = new List<AppUsageStats>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(new AppUsageStats
+                {
+                    AppName = reader.GetString(0),
+                    SecondsUsed = Convert.ToInt32(reader.GetValue(1))
+                });
+            }
+            
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get monthly app usage");
+            return new List<AppUsageStats>();
+        }
+    }
+
+    /// <summary>
+    /// Get lifetime application usage statistics
+    /// </summary>
+    public async Task<List<AppUsageStats>> GetLifetimeAppUsageAsync()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT app_name, SUM(seconds_used) as total_seconds
+                FROM app_usage_stats
+                GROUP BY app_name
+                ORDER BY total_seconds DESC";
+            
+            var results = new List<AppUsageStats>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                results.Add(new AppUsageStats
+                {
+                    AppName = reader.GetString(0),
+                    SecondsUsed = Convert.ToInt32(reader.GetValue(1))
+                });
+            }
+            
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get lifetime app usage");
+            return new List<AppUsageStats>();
         }
     }
 

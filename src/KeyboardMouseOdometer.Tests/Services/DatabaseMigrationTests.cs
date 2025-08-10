@@ -64,9 +64,9 @@ public class DatabaseMigrationTests : IDisposable
         // Act
         await _databaseService.InitializeAsync();
 
-        // Assert - Database should be at version 3 (includes aggregation views)
+        // Assert - Database should be at version 4 (includes app usage tracking)
         var version = await GetDatabaseVersionAsync();
-        Assert.Equal(3, version);
+        Assert.Equal(4, version);
     }
 
     [Fact]
@@ -85,6 +85,26 @@ public class DatabaseMigrationTests : IDisposable
         Assert.True(monthlyViewExists, "monthly_stats view should be created");
         Assert.True(lifetimeViewExists, "lifetime_stats_view should be created");
         Assert.True(todayHourlyViewExists, "today_hourly_stats view should be created");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_CreatesAppUsageTablesAndViews()
+    {
+        // Act
+        await _databaseService.InitializeAsync();
+
+        // Assert - Check that app usage table and views exist
+        var tableExists = await TableExistsAsync("app_usage_stats");
+        var dailyViewExists = await ViewExistsAsync("app_usage_daily");
+        var weeklyViewExists = await ViewExistsAsync("app_usage_weekly");
+        var monthlyViewExists = await ViewExistsAsync("app_usage_monthly");
+        var lifetimeViewExists = await ViewExistsAsync("app_usage_lifetime");
+
+        Assert.True(tableExists, "app_usage_stats table should be created");
+        Assert.True(dailyViewExists, "app_usage_daily view should be created");
+        Assert.True(weeklyViewExists, "app_usage_weekly view should be created");
+        Assert.True(monthlyViewExists, "app_usage_monthly view should be created");
+        Assert.True(lifetimeViewExists, "app_usage_lifetime view should be created");
     }
 
     [Fact]

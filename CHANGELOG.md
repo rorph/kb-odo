@@ -5,6 +5,56 @@ All notable changes to Keyboard + Mouse Odometer will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-08-10
+
+### 🐛 Bug Fixes
+
+#### Critical Data Loss Fix
+- **Fixed: All historical data was being deleted at midnight** when `DatabaseRetentionDays = 0`
+  - Added proper handling for retention = 0 (keep forever)
+  - Added early return in `CleanupOldDataAsync` for non-positive retention values
+  - Added conditional check in midnight rollover before calling cleanup
+  - Created comprehensive unit tests for data retention logic
+
+#### Application Usage Tracking Fixes
+- **Fixed: Timezone issues causing empty "Today" view** 
+  - Replaced SQLite `date('now')` UTC-based views with local time queries
+  - All date queries now use C#'s `DateTime.Today` respecting system timezone
+  - Fixed data not showing for users in non-UTC timezones (e.g., GMT-3)
+- **Fixed: Application Usage UI not displaying data**
+  - Fixed database query column mismatch in view definitions
+  - Added missing `AppUsageViewModel.InitializeAsync()` call on startup
+  - Fixed data type conversion issues in database readers
+- **Fixed: Application Usage dropdown styling in dark theme**
+  - Replaced problematic ComboBox with RadioButton controls
+  - Implemented consistent button-style UI matching Heatmap tab
+  - Added proper dark theme styling with `StringBooleanConverter`
+
+#### UI/Display Fixes
+- **Fixed: Monthly chart date formatting** - Changed from "MM/dd" to "M/d" format
+  - Added explicit `IntervalType = DateTimeIntervalType.Days`
+  - Added padding settings to prevent axis shifting
+- **Fixed: Daily table showing empty rows** - Now only displays days with actual data
+  - Removed creation of zero-value entries for missing days
+  - Table only shows days that have been tracked in the database
+- **Fixed: Applications tab DataGrid not switching data sources**
+  - Added proper DataTrigger for "Today" time range
+  - Fixed ItemsSource binding for all time ranges (Today/Weekly/Monthly/Lifetime)
+- **Removed redundant chart titles** 
+  - Charts now use GroupBox headers only for cleaner UI
+  - Removed "Top Applications by Usage Time" header from Applications tab
+
+### 🧪 Testing
+- Added `DataRetentionTests.cs` with 7 comprehensive test cases
+  - Validates retention = 0 preserves all data
+  - Validates retention < 0 preserves all data
+  - Validates positive retention only deletes old data
+  - Validates midnight rollover doesn't delete data when retention = 0
+
+### 🎨 UI Improvements
+- **Consistent UI Design** - Applications tab now uses button-style time range selectors matching Heatmap tab
+- **Better Dark Theme Support** - Fixed white-on-white text issues in Applications dropdown
+
 ## [1.2.0] - 2025-08-08
 
 ### 🔥 Critical Fixes

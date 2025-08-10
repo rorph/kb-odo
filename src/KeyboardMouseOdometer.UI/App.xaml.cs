@@ -221,7 +221,15 @@ public partial class App : Application
                     return new DatabaseService(logger, databasePath);
                 });
                 services.AddSingleton<InputMonitoringService>();
-                services.AddSingleton<DataLoggerService>();
+                services.AddSingleton<DataLoggerService>(provider =>
+                {
+                    var logger = provider.GetRequiredService<ILogger<DataLoggerService>>();
+                    var databaseService = provider.GetRequiredService<DatabaseService>();
+                    var configuration = provider.GetRequiredService<Core.Models.Configuration>();
+                    var keyCodeMapper = provider.GetRequiredService<IKeyCodeMapper>();
+                    var appUsageLogger = provider.GetRequiredService<ILogger<AppUsageService>>();
+                    return new DataLoggerService(logger, databaseService, configuration, keyCodeMapper, appUsageLogger);
+                });
 
                 // Key code mapping
                 services.AddSingleton<IKeyCodeMapper, WpfKeyCodeMapper>();
@@ -234,6 +242,7 @@ public partial class App : Application
                 services.AddTransient<MainWindowViewModel>();
                 services.AddTransient<ToolbarViewModel>();
                 services.AddTransient<HeatmapViewModel>();
+                services.AddTransient<AppUsageViewModel>();
 
                 // Views
                 services.AddTransient<MainWindow>();

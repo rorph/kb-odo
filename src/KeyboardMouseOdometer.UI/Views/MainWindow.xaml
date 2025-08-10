@@ -726,6 +726,175 @@
                 <views:HeatmapView DataContext="{Binding HeatmapViewModel}"/>
             </TabItem>
 
+            <!-- Application Usage Tab -->
+            <TabItem Header="Applications">
+                <Grid Background="{DynamicResource ContentBackgroundBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="300"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Time Range Selector -->
+                    <Border Grid.Row="0" Background="{DynamicResource HeaderBackgroundBrush}" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- Title -->
+                            <TextBlock Grid.Column="0" Text="Application Usage" 
+                                       Foreground="{DynamicResource HeaderForegroundBrush}" FontSize="16" FontWeight="Bold" 
+                                       VerticalAlignment="Center" Margin="0,0,20,0"/>
+                            
+                            <!-- Time range buttons -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                                <RadioButton x:Name="TodayRadio" Content="Today" 
+                                             IsChecked="{Binding Path=AppUsageViewModel.SelectedTimeRange, 
+                                                         Converter={StaticResource StringBooleanConverter}, 
+                                                         ConverterParameter=Today}"
+                                             Style="{StaticResource TimeRangeRadioButton}"
+                                             Command="{Binding AppUsageViewModel.ChangeTimeRangeCommand}"
+                                             CommandParameter="Today"/>
+                                
+                                <RadioButton x:Name="WeeklyRadio" Content="Weekly" 
+                                             IsChecked="{Binding Path=AppUsageViewModel.SelectedTimeRange, 
+                                                         Converter={StaticResource StringBooleanConverter}, 
+                                                         ConverterParameter=Weekly}"
+                                             Style="{StaticResource TimeRangeRadioButton}"
+                                             Command="{Binding AppUsageViewModel.ChangeTimeRangeCommand}"
+                                             CommandParameter="Weekly"/>
+                                
+                                <RadioButton x:Name="MonthlyRadio" Content="Monthly" 
+                                             IsChecked="{Binding Path=AppUsageViewModel.SelectedTimeRange, 
+                                                         Converter={StaticResource StringBooleanConverter}, 
+                                                         ConverterParameter=Monthly}"
+                                             Style="{StaticResource TimeRangeRadioButton}"
+                                             Command="{Binding AppUsageViewModel.ChangeTimeRangeCommand}"
+                                             CommandParameter="Monthly"/>
+                                
+                                <RadioButton x:Name="LifetimeRadio" Content="Lifetime" 
+                                             IsChecked="{Binding Path=AppUsageViewModel.SelectedTimeRange, 
+                                                         Converter={StaticResource StringBooleanConverter}, 
+                                                         ConverterParameter=Lifetime}"
+                                             Style="{StaticResource TimeRangeRadioButton}"
+                                             Command="{Binding AppUsageViewModel.ChangeTimeRangeCommand}"
+                                             CommandParameter="Lifetime"/>
+                            </StackPanel>
+                            
+                            <!-- Refresh button -->
+                            <Button Grid.Column="2" Content="↻ Refresh" 
+                                    Command="{Binding AppUsageViewModel.RefreshCommand}"
+                                    Style="{StaticResource ModernButton}"
+                                    Padding="10,5" Margin="5,0,0,0"/>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Application Usage Data Grid -->
+                    <DataGrid Grid.Row="1" Margin="10" 
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal"
+                              HeadersVisibility="Column"
+                              Background="{DynamicResource ContentBackgroundBrush}"
+                              Foreground="{DynamicResource ContentForegroundBrush}"
+                              BorderBrush="{DynamicResource ContentBorderBrush}"
+                              RowBackground="{DynamicResource ContentBackgroundBrush}"
+                              AlternatingRowBackground="{DynamicResource WindowBackgroundBrush}">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="{DynamicResource HeaderBackgroundBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource HeaderForegroundBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource ContentBorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                <Setter Property="Padding" Value="5,3"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                            </Style>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="{DynamicResource ContentBackgroundBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ContentForegroundBrush}"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource ButtonHoverBackgroundBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource TabSelectedBackgroundBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TabSelectedForegroundBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="BorderBrush" Value="{DynamicResource ContentBorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource TabSelectedBackgroundBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TabSelectedForegroundBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.Resources>
+                        <DataGrid.Style>
+                            <Style TargetType="DataGrid">
+                                <Setter Property="ItemsSource" Value="{Binding AppUsageViewModel.TodayApps}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AppUsageViewModel.SelectedTimeRange}" Value="Today">
+                                        <Setter Property="ItemsSource" Value="{Binding AppUsageViewModel.TodayApps}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding AppUsageViewModel.SelectedTimeRange}" Value="Weekly">
+                                        <Setter Property="ItemsSource" Value="{Binding AppUsageViewModel.WeeklyApps}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding AppUsageViewModel.SelectedTimeRange}" Value="Monthly">
+                                        <Setter Property="ItemsSource" Value="{Binding AppUsageViewModel.MonthlyApps}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding AppUsageViewModel.SelectedTimeRange}" Value="Lifetime">
+                                        <Setter Property="ItemsSource" Value="{Binding AppUsageViewModel.LifetimeApps}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.Style>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Application" 
+                                                Binding="{Binding AppName}" 
+                                                Width="*"
+                                                MinWidth="200"/>
+                            <DataGridTextColumn Header="Time Used" 
+                                                Binding="{Binding FormattedTime}" 
+                                                Width="150">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="Margin" Value="0,0,10,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Seconds" 
+                                                Binding="{Binding SecondsUsed}" 
+                                                Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="Margin" Value="0,0,10,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    
+                    <!-- Application Usage Chart -->
+                    <Border Grid.Row="2" Margin="10"
+                            Background="{DynamicResource ContentBackgroundBrush}"
+                            BorderBrush="{DynamicResource ContentBorderBrush}"
+                            BorderThickness="1">
+                        <oxy:PlotView Model="{Binding AppUsageViewModel.AppUsageChart}" 
+                                      Background="{DynamicResource ChartBackgroundBrush}"/>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <!-- Settings Tab -->
             <TabItem Header="Settings">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -736,6 +905,7 @@
                                 <CheckBox Content="Track Mouse Movement" IsChecked="{Binding TrackMouseMovement}" Margin="5"/>
                                 <CheckBox Content="Track Mouse Clicks" IsChecked="{Binding TrackMouseClicks}" Margin="5"/>
                                 <CheckBox Content="Track Scroll Wheel" IsChecked="{Binding TrackScrollWheel}" Margin="5"/>
+                                <CheckBox Content="Track Application Usage" IsChecked="{Binding TrackApplicationUsage}" Margin="5"/>
                             </StackPanel>
                         </GroupBox>
 

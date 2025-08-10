@@ -13,6 +13,7 @@ public class Configuration
     public bool TrackMouseMovement { get; set; } = true;
     public bool TrackMouseClicks { get; set; } = true;
     public bool TrackScrollWheel { get; set; } = true;
+    public bool TrackApplicationUsage { get; set; } = false; // Privacy-first: disabled by default
 
     // System Integration
     public bool StartWithWindows { get; set; } = false;
@@ -235,6 +236,7 @@ public class Configuration
         TrackMouseMovement = other.TrackMouseMovement;
         TrackMouseClicks = other.TrackMouseClicks;
         TrackScrollWheel = other.TrackScrollWheel;
+        TrackApplicationUsage = other.TrackApplicationUsage;
         StartWithWindows = other.StartWithWindows;
         MinimizeToTray = other.MinimizeToTray;
         ShowToolbar = other.ShowToolbar;

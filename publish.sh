@@ -9,7 +9,14 @@ echo "======================================"
 echo "Publishing Keyboard Mouse Odometer"
 echo "======================================"
 
-VERSION="1.1.0"
+# Extract version from .csproj file
+VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/KeyboardMouseOdometer.UI/KeyboardMouseOdometer.UI.csproj)
+if [ -z "$VERSION" ]; then
+    echo "Error: Could not extract version from .csproj file"
+    exit 1
+fi
+echo "Detected version: $VERSION"
+
 OUTPUT_DIR="./publish"
 RUNTIME="win-x64"
 
@@ -53,9 +60,7 @@ dotnet publish src/KeyboardMouseOdometer.UI/KeyboardMouseOdometer.UI.csproj \
     --self-contained true \
     --output "$OUTPUT_DIR/KeyboardMouseOdometer-$VERSION-$RUNTIME" \
     -p:PublishSingleFile=true \
-    -p:IncludeNativeLibrariesForSelfExtract=true \
-    -p:AssemblyVersion=$VERSION \
-    -p:FileVersion=$VERSION
+    -p:IncludeNativeLibrariesForSelfExtract=true
 
 # Create a ZIP archive
 echo "Creating ZIP archive..."

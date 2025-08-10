@@ -18,6 +18,7 @@ public class DataLoggerService : IDisposable
     private readonly Timer _saveTimer;
     private readonly Timer _midnightTimer;
     private readonly Timer _uiUpdateTimer;
+    private readonly AppUsageService? _appUsageService;
 
     // In-memory aggregation of today's data
     private DailyStats _todayStats;
@@ -43,12 +44,19 @@ public class DataLoggerService : IDisposable
         ILogger<DataLoggerService> logger, 
         DatabaseService databaseService, 
         Models.Configuration configuration,
-        IKeyCodeMapper keyCodeMapper)
+        IKeyCodeMapper keyCodeMapper,
+        ILogger<AppUsageService>? appUsageLogger = null)
     {
         _logger = logger;
         _databaseService = databaseService;
         _configuration = configuration;
         _keyCodeMapper = keyCodeMapper;
+        
+        // Initialize AppUsageService if app tracking is enabled
+        if (_configuration.TrackApplicationUsage && appUsageLogger != null)
+        {
+            _appUsageService = new AppUsageService(appUsageLogger, databaseService, configuration);
+        }
 
         // Initialize today's stats
         _todayStats = DailyStats.CreateForToday();
@@ -153,23 +161,36 @@ public class DataLoggerService : IDisposable
                 
                 _logger.LogInformation("Rollover complete, new day stats initialized for {Date}", currentDate);
                 
+                // Handle app usage day rollover
+                if (_appUsageService != null)
+                {
+                    _ = Task.Run(async () => await _appUsageService.HandleDayRolloverAsync());
+                }
+                
                 // Clear flag
                 _isRollingOver = false;
             }
             
-            // Clean up old data asynchronously (non-critical)
-            _ = Task.Run(async () => 
+            // Clean up old data asynchronously (non-critical) - only if retention is enabled
+            if (_configuration.DatabaseRetentionDays > 0)
             {
-                try
+                _ = Task.Run(async () => 
                 {
-                    await _databaseService.CleanupOldDataAsync(_configuration.DatabaseRetentionDays);
-                    _logger.LogInformation("Old data cleanup completed");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to cleanup old data");
-                }
-            });
+                    try
+                    {
+                        await _databaseService.CleanupOldDataAsync(_configuration.DatabaseRetentionDays);
+                        _logger.LogInformation("Old data cleanup completed");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to cleanup old data");
+                    }
+                });
+            }
+            else
+            {
+                _logger.LogDebug("Skipping data cleanup - retention disabled (DatabaseRetentionDays = {RetentionDays})", _configuration.DatabaseRetentionDays);
+            }
         }
         
         // Check if we need to roll over to a new hour (only if not in day rollover)
@@ -210,6 +231,12 @@ public class DataLoggerService : IDisposable
             // Create new hour stats
             _currentHourStats = HourlyStats.CreateEmpty(currentDate, currentHour);
             _currentHourKeyStats.Clear();
+            
+            // Handle app usage hour rollover
+            if (_appUsageService != null)
+            {
+                _ = Task.Run(async () => await _appUsageService.HandleHourRolloverAsync());
+            }
         }
     }
 
@@ -233,6 +260,9 @@ public class DataLoggerService : IDisposable
             }
 
             StatsUpdated?.Invoke(this, _todayStats);
+            
+            // Start app usage tracking if enabled
+            _appUsageService?.StartTracking();
         }
         catch (Exception ex)
         {
@@ -780,6 +810,7 @@ public class DataLoggerService : IDisposable
         _saveTimer?.Dispose();
         _midnightTimer?.Dispose();
         _uiUpdateTimer?.Dispose();
+        _appUsageService?.Dispose();
         
         _logger.LogInformation("DataLoggerService disposed");
     }

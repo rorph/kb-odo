@@ -1,6 +1,7 @@
 using KeyboardMouseOdometer.UI.ViewModels;
 using KeyboardMouseOdometer.Core.Models;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace KeyboardMouseOdometer.UI.Views;
 
@@ -48,5 +49,22 @@ public partial class MainWindow : Window
         // Don't actually close, just hide to tray
         e.Cancel = true;
         Hide();
+    }
+    
+    private void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is TabControl tabControl && DataContext is MainWindowViewModel viewModel)
+        {
+            var selectedTab = tabControl.SelectedItem as TabItem;
+            if (selectedTab?.Header?.ToString() == "Lifetime")
+            {
+                // Auto-refresh lifetime stats when the tab is selected
+                // The RelayCommand generates a RefreshLifetimeStatsCommand property
+                if (viewModel.RefreshLifetimeStatsCommand?.CanExecute(null) == true)
+                {
+                    viewModel.RefreshLifetimeStatsCommand.Execute(null);
+                }
+            }
+        }
     }
 }

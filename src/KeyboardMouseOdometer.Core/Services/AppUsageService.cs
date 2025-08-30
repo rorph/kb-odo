@@ -101,24 +101,42 @@ public class AppUsageService : IDisposable
         {
             var currentApp = GetFocusedApplicationName();
             var now = DateTime.Now;
-            var secondsElapsed = (int)(now - _lastCheckTime).TotalSeconds;
             
-            if (!string.IsNullOrEmpty(_currentAppName) && secondsElapsed > 0)
+            // Always track time for the current app if we have one
+            if (!string.IsNullOrEmpty(_currentAppName))
             {
-                // Add time to the previous app
-                lock (_usageLock)
-                {
-                    if (_pendingAppUsage.ContainsKey(_currentAppName))
-                        _pendingAppUsage[_currentAppName] += secondsElapsed;
-                    else
-                        _pendingAppUsage[_currentAppName] = secondsElapsed;
-                }
+                // Calculate elapsed time more precisely
+                var elapsed = now - _lastCheckTime;
+                var secondsElapsed = Math.Round(elapsed.TotalSeconds);
                 
-                _logger.LogTrace("Added {Seconds}s to {App}", secondsElapsed, _currentAppName);
+                if (secondsElapsed >= 1)
+                {
+                    // Add time to the current app
+                    lock (_usageLock)
+                    {
+                        if (_pendingAppUsage.ContainsKey(_currentAppName))
+                            _pendingAppUsage[_currentAppName] += (int)secondsElapsed;
+                        else
+                            _pendingAppUsage[_currentAppName] = (int)secondsElapsed;
+                    }
+                    
+                    _logger.LogTrace("Added {Seconds}s to {App}", (int)secondsElapsed, _currentAppName);
+                    _lastCheckTime = now;
+                }
+            }
+            else
+            {
+                // No previous app, just update the time
+                _lastCheckTime = now;
             }
             
-            _currentAppName = currentApp;
-            _lastCheckTime = now;
+            // Update current app if it changed
+            if (currentApp != _currentAppName)
+            {
+                _logger.LogTrace("App focus changed from {OldApp} to {NewApp}", _currentAppName, currentApp);
+                _currentAppName = currentApp;
+                _lastCheckTime = now; // Reset timer for new app
+            }
         }
         catch (Exception ex)
         {
@@ -150,18 +168,43 @@ public class AppUsageService : IDisposable
             // Get the main module name (executable name)
             string appName = process.ProcessName;
             
-            // Try to get the main module file name for better identification
-            try
+            // Special handling for ApplicationFrameHost (UWP apps)
+            if (appName == "ApplicationFrameHost")
             {
-                if (process.MainModule != null)
+                // Try to get the actual UWP app name from window title
+                var length = GetWindowTextLength(hwnd);
+                if (length > 0)
                 {
-                    appName = Path.GetFileNameWithoutExtension(process.MainModule.FileName) ?? process.ProcessName;
+                    var builder = new StringBuilder(length + 1);
+                    if (GetWindowText(hwnd, builder, builder.Capacity) > 0)
+                    {
+                        var windowTitle = builder.ToString();
+                        // Use window title for UWP apps, but clean it up
+                        if (!string.IsNullOrWhiteSpace(windowTitle))
+                        {
+                            // Remove common suffixes
+                            appName = windowTitle.Split('-')[0].Trim();
+                            if (appName.Length > 50) // Truncate very long titles
+                                appName = appName.Substring(0, 50);
+                        }
+                    }
                 }
             }
-            catch
+            else
             {
-                // Some system processes don't allow access to MainModule
-                // Use ProcessName as fallback
+                // Try to get the main module file name for better identification
+                try
+                {
+                    if (process.MainModule != null)
+                    {
+                        appName = Path.GetFileNameWithoutExtension(process.MainModule.FileName) ?? process.ProcessName;
+                    }
+                }
+                catch
+                {
+                    // Some system processes don't allow access to MainModule
+                    // Use ProcessName as fallback
+                }
             }
             
             return appName;

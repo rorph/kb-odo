@@ -540,17 +540,6 @@ public partial class App : Application
             if (_taskbarIcon.Visibility == Visibility.Visible)
             {
                 LogStartupStep("System tray icon setup completed successfully - icon should now be visible");
-                
-                // Show a test balloon tip to confirm it's working
-                try
-                {
-                    _taskbarIcon.ShowBalloonTip("Keyboard Mouse Odometer", "Application started successfully!", Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info);
-                    LogStartupStep("Test balloon tip displayed");
-                }
-                catch (Exception balloonEx)
-                {
-                    LogStartupStep($"Test balloon tip failed: {balloonEx.Message}");
-                }
             }
             else
             {

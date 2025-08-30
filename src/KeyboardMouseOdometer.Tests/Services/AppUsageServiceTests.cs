@@ -58,7 +58,7 @@ public class AppUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StartTracking_WhenConfigDisabled_ShouldNotTrack()
+    public void StartTracking_WhenConfigDisabled_ShouldNotTrack()
     {
         // Arrange
         var disabledConfig = new Configuration
@@ -123,7 +123,7 @@ public class AppUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AppUsageStats_FormattedTime_ShouldFormatCorrectly()
+    public void AppUsageStats_FormattedTime_ShouldFormatCorrectly()
     {
         // Arrange & Act
         var stats1 = new AppUsageStats { AppName = "Test1", SecondsUsed = 45 };

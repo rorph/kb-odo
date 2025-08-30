@@ -712,12 +712,14 @@ public class DatabaseService : IDisposable
 
             // Update hourly stats with UPSERT
             var hourlySql = @"
-                INSERT INTO hourly_stats (date, hour, key_count, mouse_distance, click_count, scroll_distance)
-                VALUES (@date, @hour, @keyCount, @mouseDistance, @clickCount, @scrollDistance)
+                INSERT INTO hourly_stats (date, hour, key_count, mouse_distance, left_clicks, right_clicks, middle_clicks, scroll_distance)
+                VALUES (@date, @hour, @keyCount, @mouseDistance, @leftClicks, @rightClicks, @middleClicks, @scrollDistance)
                 ON CONFLICT(date, hour) DO UPDATE SET
                     key_count = key_count + @keyCount,
                     mouse_distance = mouse_distance + @mouseDistance,
-                    click_count = click_count + @clickCount,
+                    left_clicks = left_clicks + @leftClicks,
+                    right_clicks = right_clicks + @rightClicks,
+                    middle_clicks = middle_clicks + @middleClicks,
                     scroll_distance = scroll_distance + @scrollDistance";
 
             using (var command = _connection.CreateCommand())
@@ -728,7 +730,9 @@ public class DatabaseService : IDisposable
                 command.Parameters.AddWithValue("@hour", hour);
                 command.Parameters.AddWithValue("@keyCount", keyCount);
                 command.Parameters.AddWithValue("@mouseDistance", mouseDistance);
-                command.Parameters.AddWithValue("@clickCount", leftClicks + rightClicks + middleClicks);
+                command.Parameters.AddWithValue("@leftClicks", leftClicks);
+                command.Parameters.AddWithValue("@rightClicks", rightClicks);
+                command.Parameters.AddWithValue("@middleClicks", middleClicks);
                 command.Parameters.AddWithValue("@scrollDistance", scrollDistance);
                 await command.ExecuteNonQueryAsync();
             }
@@ -1752,6 +1756,115 @@ public class DatabaseService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Export all statistics data to CSV format
+    /// </summary>
+    public async Task<string> ExportToCsvAsync(DateTime? startDate = null, DateTime? endDate = null)
+    {
+        try
+        {
+            var csv = new System.Text.StringBuilder();
+            
+            // Export daily stats
+            csv.AppendLine("=== DAILY STATISTICS ===");
+            csv.AppendLine("Date,Keystrokes,Mouse Distance,Mouse Clicks,Scroll Distance");
+            
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            
+            var dailyCommand = connection.CreateCommand();
+            dailyCommand.CommandText = @"
+                SELECT date, key_count, mouse_distance, 
+                       (left_clicks + right_clicks + middle_clicks) as total_clicks, 
+                       scroll_distance
+                FROM daily_stats
+                WHERE (@startDate IS NULL OR date >= @startDate)
+                  AND (@endDate IS NULL OR date <= @endDate)
+                ORDER BY date DESC";
+            dailyCommand.Parameters.AddWithValue("@startDate", startDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            dailyCommand.Parameters.AddWithValue("@endDate", endDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            
+            using var dailyReader = await dailyCommand.ExecuteReaderAsync();
+            while (await dailyReader.ReadAsync())
+            {
+                csv.AppendLine($"{dailyReader.GetString(0)},{dailyReader.GetInt64(1)},{dailyReader.GetDouble(2):F2},{dailyReader.GetInt64(3)},{dailyReader.GetDouble(4):F2}");
+            }
+            
+            // Export hourly stats
+            csv.AppendLine();
+            csv.AppendLine("=== HOURLY STATISTICS ===");
+            csv.AppendLine("Date,Hour,Keystrokes,Mouse Distance,Mouse Clicks,Scroll Distance");
+            
+            var hourlyCommand = connection.CreateCommand();
+            hourlyCommand.CommandText = @"
+                SELECT date, hour, key_count, mouse_distance, 
+                       (left_clicks + right_clicks + middle_clicks) as total_clicks, 
+                       scroll_distance
+                FROM hourly_stats
+                WHERE (@startDate IS NULL OR date >= @startDate)
+                  AND (@endDate IS NULL OR date <= @endDate)
+                ORDER BY date DESC, hour DESC";
+            hourlyCommand.Parameters.AddWithValue("@startDate", startDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            hourlyCommand.Parameters.AddWithValue("@endDate", endDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            
+            using var hourlyReader = await hourlyCommand.ExecuteReaderAsync();
+            while (await hourlyReader.ReadAsync())
+            {
+                csv.AppendLine($"{hourlyReader.GetString(0)},{hourlyReader.GetInt32(1)},{hourlyReader.GetInt64(2)},{hourlyReader.GetDouble(3):F2},{hourlyReader.GetInt64(4)},{hourlyReader.GetDouble(5):F2}");
+            }
+            
+            // Export key stats
+            csv.AppendLine();
+            csv.AppendLine("=== KEY STATISTICS ===");
+            csv.AppendLine("Date,Key,Press Count");
+            
+            var keyCommand = connection.CreateCommand();
+            keyCommand.CommandText = @"
+                SELECT date, key_code, SUM(count) as total_count
+                FROM key_stats
+                WHERE (@startDate IS NULL OR date >= @startDate)
+                  AND (@endDate IS NULL OR date <= @endDate)
+                GROUP BY date, key_code
+                ORDER BY date DESC, total_count DESC";
+            keyCommand.Parameters.AddWithValue("@startDate", startDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            keyCommand.Parameters.AddWithValue("@endDate", endDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            
+            using var keyReader = await keyCommand.ExecuteReaderAsync();
+            while (await keyReader.ReadAsync())
+            {
+                csv.AppendLine($"{keyReader.GetString(0)},{keyReader.GetString(1)},{keyReader.GetInt64(2)}");
+            }
+            
+            // Export app usage stats
+            csv.AppendLine();
+            csv.AppendLine("=== APPLICATION USAGE ===");
+            csv.AppendLine("Date,Hour,Application,Seconds Used");
+            
+            var appCommand = connection.CreateCommand();
+            appCommand.CommandText = @"
+                SELECT date, hour, app_name, seconds_used
+                FROM app_usage_stats
+                WHERE (@startDate IS NULL OR date >= @startDate)
+                  AND (@endDate IS NULL OR date <= @endDate)
+                ORDER BY date DESC, hour DESC, seconds_used DESC";
+            appCommand.Parameters.AddWithValue("@startDate", startDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            appCommand.Parameters.AddWithValue("@endDate", endDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+            
+            using var appReader = await appCommand.ExecuteReaderAsync();
+            while (await appReader.ReadAsync())
+            {
+                csv.AppendLine($"{appReader.GetString(0)},{appReader.GetInt32(1)},{appReader.GetString(2)},{appReader.GetInt32(3)}");
+            }
+            
+            return csv.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export data to CSV");
+            throw;
+        }
+    }
+    
     public void Dispose()
     {
         try

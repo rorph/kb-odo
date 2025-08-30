@@ -9,8 +9,10 @@ using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace KeyboardMouseOdometer.UI.ViewModels;
 
@@ -65,6 +67,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private PlotModel monthlyScrollChart = new();
+    
+    // Selected items for tabs to trigger chart updates
+    [ObservableProperty]
+    private DailyStatsSummary? selectedDailyItem;
     
     // Data grid collections
     [ObservableProperty]
@@ -174,6 +180,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string applicationVersion = "";
+    
+    // Partial methods for handling selection changes
+    partial void OnSelectedDailyItemChanged(DailyStatsSummary? value)
+    {
+        if (value != null)
+        {
+            _ = LoadDailyDataAsync(value.Date);
+        }
+    }
+    
+    partial void OnSelectedWeeklyItemChanged(WeeklyStatsSummary? value)
+    {
+        if (value != null)
+        {
+            _ = LoadWeeklyDataAsync(value.WeekStart);
+        }
+    }
+    
+    partial void OnSelectedMonthlyItemChanged(MonthlyStatsSummary? value)
+    {
+        if (value != null)
+        {
+            _ = LoadMonthlyDataAsync(value.MonthStart);
+        }
+    }
 
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
@@ -611,6 +642,148 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         
         ScrollDistancePerHourChart.InvalidatePlot(true);
     }
+    
+    private async Task LoadDailyDataAsync(DateTime date)
+    {
+        try
+        {
+            // Get hourly stats for the selected date
+            var dateString = date.ToString("yyyy-MM-dd");
+            var hourlyStats = await _databaseService.GetHourlyStatsAsync(dateString);
+            
+            // Update the hourly charts with the data from the selected date
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                UpdateHourlyCharts(hourlyStats);
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load daily data for {Date}", date);
+        }
+    }
+    
+    private async Task LoadWeeklyDataAsync(DateTime date)
+    {
+        try
+        {
+            // Calculate the start of the week containing the selected date
+            var startOfWeek = date.AddDays(-(int)date.DayOfWeek);
+            var endOfWeek = startOfWeek.AddDays(6);
+            
+            // Get daily stats for the week
+            var dailyStats = await _databaseService.GetDailyStatsRangeAsync(startOfWeek, endOfWeek);
+            var weekStats = dailyStats.Where(d => 
+            {
+                if (DateTime.TryParse(d.Date, out var statDate))
+                {
+                    return statDate >= startOfWeek && statDate <= endOfWeek;
+                }
+                return false;
+            }).OrderBy(d => d.Date).ToList();
+            
+            // Update weekly charts and visualization data
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                UpdateWeeklyCharts(weekStats);
+                
+                // Update the bar chart visualization data
+                WeeklyVisualizationData.Clear();
+                
+                // Find max values for normalization
+                var maxDailyKeys = weekStats.Any() ? weekStats.Max(s => s.KeyCount) : 1;
+                var maxDailyMouse = weekStats.Any() ? weekStats.Max(s => s.MouseDistance) : 1;
+                var maxDailyScroll = weekStats.Any() ? weekStats.Max(s => s.ScrollDistance) : 1;
+                
+                // Create visualization data for each day in the week
+                for (var currentDate = startOfWeek; currentDate <= endOfWeek; currentDate = currentDate.AddDays(1))
+                {
+                    var dayStats = weekStats.FirstOrDefault(s => DateTime.Parse(s.Date).Date == currentDate.Date);
+                    
+                    var summary = new DailyStatsSummary
+                    {
+                        Date = currentDate,
+                        KeyCount = dayStats?.KeyCount ?? 0,
+                        MouseDistance = dayStats?.MouseDistance ?? 0,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
+                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
+                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0),
+                        KeyCountNormalized = maxDailyKeys > 0 ? (dayStats?.KeyCount ?? 0) / (double)maxDailyKeys : 0,
+                        MouseDistanceNormalized = maxDailyMouse > 0 ? (dayStats?.MouseDistance ?? 0) / maxDailyMouse : 0,
+                        ScrollDistanceNormalized = maxDailyScroll > 0 ? (dayStats?.ScrollDistance ?? 0) / maxDailyScroll : 0
+                    };
+                    
+                    WeeklyVisualizationData.Add(summary);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load weekly data for {Date}", date);
+        }
+    }
+    
+    private async Task LoadMonthlyDataAsync(DateTime date)
+    {
+        try
+        {
+            // Get the first and last day of the selected month
+            var firstDayOfMonth = new DateTime(date.Year, date.Month, 1);
+            var lastDayOfMonth = firstDayOfMonth.AddMonths(1).AddDays(-1);
+            
+            // Get daily stats for the month
+            var dailyStats = await _databaseService.GetDailyStatsRangeAsync(firstDayOfMonth, lastDayOfMonth);
+            var monthStats = dailyStats.Where(d =>
+            {
+                if (DateTime.TryParse(d.Date, out var statDate))
+                {
+                    return statDate >= firstDayOfMonth && statDate <= lastDayOfMonth;
+                }
+                return false;
+            }).OrderBy(d => d.Date).ToList();
+            
+            // Update monthly charts and visualization data
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                UpdateMonthlyCharts(monthStats);
+                
+                // Update the bar chart visualization data
+                MonthlyVisualizationData.Clear();
+                
+                // Find max values for normalization
+                var maxDailyKeys = monthStats.Any() ? monthStats.Max(s => s.KeyCount) : 1;
+                var maxDailyMouse = monthStats.Any() ? monthStats.Max(s => s.MouseDistance) : 1;
+                var maxDailyScroll = monthStats.Any() ? monthStats.Max(s => s.ScrollDistance) : 1;
+                
+                // Create visualization data for each day in the month
+                for (var currentDate = firstDayOfMonth; currentDate <= lastDayOfMonth; currentDate = currentDate.AddDays(1))
+                {
+                    var dayStats = monthStats.FirstOrDefault(s => DateTime.Parse(s.Date).Date == currentDate.Date);
+                    
+                    var summary = new DailyStatsSummary
+                    {
+                        Date = currentDate,
+                        KeyCount = dayStats?.KeyCount ?? 0,
+                        MouseDistance = dayStats?.MouseDistance ?? 0,
+                        MouseDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.MouseDistance ?? 0, DistanceUnit),
+                        ScrollDistance = dayStats?.ScrollDistance ?? 0,
+                        ScrollDistanceDisplay = DistanceCalculator.FormatDistanceAutoScale(dayStats?.ScrollDistance ?? 0, DistanceUnit),
+                        TotalClicks = (dayStats?.LeftClicks ?? 0) + (dayStats?.RightClicks ?? 0) + (dayStats?.MiddleClicks ?? 0),
+                        KeyCountNormalized = maxDailyKeys > 0 ? (dayStats?.KeyCount ?? 0) / (double)maxDailyKeys : 0,
+                        MouseDistanceNormalized = maxDailyMouse > 0 ? (dayStats?.MouseDistance ?? 0) / maxDailyMouse : 0,
+                        ScrollDistanceNormalized = maxDailyScroll > 0 ? (dayStats?.ScrollDistance ?? 0) / maxDailyScroll : 0
+                    };
+                    
+                    MonthlyVisualizationData.Add(summary);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load monthly data for {Date}", date);
+        }
+    }
 
     [RelayCommand]
     private async Task ResetTodayStatsAsync()
@@ -628,10 +801,73 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void ExportData()
+    private async Task ExportDataAsync()
     {
-        // TODO: Implement data export functionality
-        MessageBox.Show("Export functionality will be implemented in a future version.", "Export Data", MessageBoxButton.OK, MessageBoxImage.Information);
+        try
+        {
+            // Show save file dialog
+            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export Keyboard & Mouse Statistics",
+                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                DefaultExt = "csv",
+                FileName = $"KeyboardMouseStats_{DateTime.Now:yyyy-MM-dd_HHmmss}.csv"
+            };
+            
+            if (saveDialog.ShowDialog() != true)
+                return;
+            
+            // Show progress message
+            var progressWindow = new Window
+            {
+                Title = "Exporting Data",
+                Width = 300,
+                Height = 100,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Application.Current.MainWindow,
+                Content = new System.Windows.Controls.TextBlock
+                {
+                    Text = "Exporting data, please wait...",
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                    Margin = new Thickness(20)
+                }
+            };
+            progressWindow.Show();
+            
+            try
+            {
+                // Export data to CSV
+                var csvContent = await _databaseService.ExportToCsvAsync();
+                
+                // Save to file
+                await File.WriteAllTextAsync(saveDialog.FileName, csvContent);
+                
+                progressWindow.Close();
+                
+                // Show success message
+                MessageBox.Show(
+                    $"Data successfully exported to:\n{saveDialog.FileName}",
+                    "Export Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                
+                _logger.LogInformation("Data exported to {FileName}", saveDialog.FileName);
+            }
+            finally
+            {
+                progressWindow.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export data");
+            MessageBox.Show(
+                $"Failed to export data: {ex.Message}",
+                "Export Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     [RelayCommand]
@@ -905,7 +1141,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 var maxDailyMouse = currentMonthData.Any() ? currentMonthData.Max(s => s.MouseDistance) : 1;
                 var maxDailyScroll = currentMonthData.Any() ? currentMonthData.Max(s => s.ScrollDistance) : 1;
                 
-                for (var date = currentMonthStart; date <= currentMonthEnd && date <= today; date = date.AddDays(1))
+                for (var date = currentMonthStart; date <= currentMonthEnd; date = date.AddDays(1))
                 {
                     var dayStats = currentMonthData.FirstOrDefault(s => DateTime.Parse(s.Date).Date == date.Date);
                     

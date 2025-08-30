@@ -83,7 +83,8 @@
         <TabControl Grid.Row="2" Margin="5"
                     Background="{DynamicResource TabBackgroundBrush}"
                     Foreground="{DynamicResource TabForegroundBrush}"
-                    BorderBrush="{DynamicResource TabBorderBrush}">
+                    BorderBrush="{DynamicResource TabBorderBrush}"
+                    SelectionChanged="TabControl_SelectionChanged">
             <!-- Daily Tab -->
             <TabItem Header="Daily">
                 <Grid>
@@ -127,6 +128,7 @@
                     <!-- Daily Data Grid -->
                     <DataGrid Grid.Row="3" 
                               ItemsSource="{Binding DailyStats}"
+                              SelectedItem="{Binding SelectedDailyItem}"
                               AutoGenerateColumns="False"
                               CanUserSortColumns="True"
                               CanUserResizeColumns="True"
@@ -501,11 +503,11 @@
 
                     <!-- Bar Chart Visualization -->
                     <GroupBox Grid.Row="3" Header="Activity Visualization" Margin="10,5,10,10">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled">
                             <ItemsControl ItemsSource="{Binding MonthlyVisualizationData}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal"/>
+                                        <UniformGrid Rows="1"/>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
@@ -709,14 +711,6 @@
                                 </StackPanel>
                             </Grid>
                         </GroupBox>
-
-                        <!-- Refresh Button -->
-                        <Button Content="Refresh Lifetime Stats" 
-                                Command="{Binding RefreshLifetimeStatsCommand}" 
-                                Width="200" 
-                                Height="35" 
-                                HorizontalAlignment="Center" 
-                                Margin="0,10,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

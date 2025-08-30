@@ -17,17 +17,20 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
   
 - **Advanced User Interface**
   - **Transparent Resizable Toolbar**: Semi-transparent floating toolbar with real-time stats
-  - **Comprehensive Dashboard**: Tabbed interface with Today/Weekly/Monthly/Lifetime/Applications/Settings views
+  - **Comprehensive Dashboard**: Tabbed interface with Daily/Weekly/Monthly/Lifetime/Heatmap/Applications/Settings views
   - **Interactive Charts**: OxyPlot-powered charts showing usage patterns throughout the day
-  - **Application Usage Tracking**: Monitor time spent in each application (v1.2.1+)
+  - **Interactive Data Selection**: Click table rows to update charts dynamically (v1.2.2+)
+  - **Keyboard Heatmap**: Visual representation of key usage patterns with customizable color schemes
+  - **Application Usage Tracking**: Monitor time spent in each application with accurate timing (v1.2.1+)
   - **System Tray Integration**: Full system tray operation with context menu
   - **Customizable Settings**: Configurable tracking options and display preferences
   
 - **Robust Data Management**
-  - SQLite database with comprehensive schema (daily_stats and hourly_stats tables)
+  - SQLite database with comprehensive schema (daily_stats, hourly_stats, key_stats, and app_usage tables)
   - Hourly statistics for detailed intra-day patterns
   - Lifetime cumulative statistics with tracking period
   - Automatic data retention management
+  - **CSV Export**: Export all statistics to CSV format with date range filtering (v1.2.2+)
   - DPI-aware distance calculations for accurate measurements
 
 ## Screenshots
@@ -42,14 +45,32 @@ A Windows desktop application that tracks your keyboard and mouse usage statisti
 ### Dashboard
 ![Heatmap](./heatmap.png)
 
-## What's New in v1.2.1
+## What's New in v1.2.2
 
-### Application Usage Tracking
-- **NEW**: Track time spent in each application while it has focus
-- View application usage statistics in Today/Weekly/Monthly/Lifetime time ranges
-- Interactive charts showing top applications by usage time
-- Privacy-first design: Application tracking is disabled by default
-- Enable/disable tracking in Settings → Tracking Settings → Track Application Usage
+### CSV Data Export
+- **NEW**: Export all your statistics to CSV format
+- Access via Settings tab → Export Data button
+- Includes daily stats, hourly stats, key stats, and application usage
+- Optional date range filtering for targeted exports
+- Automatic file naming with timestamp
+
+### Enhanced Dashboard Interactivity
+- **NEW**: Click any row in data tables to update charts
+- Daily tab: Select a day to see hourly breakdown
+- Weekly tab: Select a week to see daily breakdown
+- Monthly tab: Select a month to see daily breakdown
+- Removed date pickers in favor of intuitive table selection
+
+### Improved Application Tracking
+- Fixed accuracy issues with continuous per-second tracking
+- UWP apps now show actual names instead of "ApplicationFrameHost"
+- Better handling of fractional seconds and focus changes
+
+### UI Improvements
+- Lifetime tab auto-refreshes when selected
+- Monthly bar charts show all days (1-31) even without data
+- Fixed visualization updates when selecting different time periods
+- Cleaner startup without debug notifications
 
 ## Requirements
 
@@ -160,6 +181,7 @@ The application stores its configuration in `%APPDATA%\KeyboardMouseOdometer\con
 | `TrackMouseMovement` | boolean | `true` | Enable/disable mouse movement tracking |
 | `TrackMouseClicks` | boolean | `true` | Enable/disable mouse click tracking |
 | `TrackScrollWheel` | boolean | `true` | Enable/disable scroll wheel tracking |
+| `TrackApplicationUsage` | boolean | `false` | Enable/disable application usage tracking (privacy-first: off by default) |
 
 #### System Integration
 | Setting | Type | Default | Description |
@@ -291,6 +313,24 @@ CREATE TABLE hourly_stats (
     scroll_distance REAL DEFAULT 0, -- in meters
     PRIMARY KEY (date, hour)
 );
+
+-- Individual key statistics for heatmap (v1.1.0+)
+CREATE TABLE key_stats (
+    date TEXT,                       -- YYYY-MM-DD
+    hour INTEGER,                    -- 0-23
+    key_code TEXT,                   -- Virtual key code identifier
+    count INTEGER DEFAULT 0,
+    PRIMARY KEY (date, hour, key_code)
+);
+
+-- Application usage tracking (v1.2.1+)
+CREATE TABLE app_usage (
+    date TEXT,                       -- YYYY-MM-DD
+    hour INTEGER,                    -- 0-23
+    app_name TEXT,                   -- Application name
+    seconds_used INTEGER DEFAULT 0,
+    PRIMARY KEY (date, hour, app_name)
+);
 ```
 
 ## Contributing
@@ -316,7 +356,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Implemented Features ✅
 - [x] Real-time keyboard and mouse tracking
 - [x] Transparent resizable toolbar
-- [x] Comprehensive dashboard with Today/Weekly/Monthly/Lifetime views
+- [x] Comprehensive dashboard with Daily/Weekly/Monthly/Lifetime views
 - [x] Interactive charts for usage patterns
 - [x] Auto-scaling distance units (Metric/Imperial/Pixels)
 - [x] Scroll wheel tracking
@@ -324,16 +364,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] SQLite database with full schema
 - [x] System tray integration
 - [x] Settings panel with configurable options
-- [x] Comprehensive test suite (136 tests)
+- [x] Comprehensive test suite (249 tests)
 - [x] Cross-platform build system
 - [x] Keyboard heatmap visualization
+- [x] Application-specific tracking
+- [x] Export to CSV format
+- [x] Interactive data selection (click table rows to update charts)
 
 ### Future Enhancements
-- [ ] Export to CSV/Excel formats
+- [ ] Export to Excel format
 - [ ] Custom chart date ranges
 - [ ] Usage pattern analysis and insights
 - [ ] Multi-monitor DPI handling improvements
 - [ ] Cloud sync support (optional)
 - [ ] Web dashboard
-- [ ] Application-specific tracking
 - [ ] Gamification features
+- [ ] Productivity analytics and reports

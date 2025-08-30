@@ -5,6 +5,83 @@ All notable changes to Keyboard + Mouse Odometer will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-08-30
+
+### ✨ New Features
+
+#### CSV Data Export
+- **Added comprehensive CSV export functionality**
+  - Export all statistics to CSV format via new Export button in Settings
+  - Includes daily stats, hourly stats, key stats, and application usage data
+  - Optional date range filtering for targeted exports
+  - Automatic file naming with timestamp
+  - Progress window during export operation
+
+#### Enhanced Dashboard Interactivity
+- **Interactive chart updates based on table selection**
+  - Daily tab: Click any row to see hourly charts for that specific day
+  - Weekly tab: Click any week to see daily charts for that week  
+  - Monthly tab: Click any month to see daily charts for that month
+  - Removed redundant date picker controls in favor of table-driven selection
+
+### 🐛 Bug Fixes
+
+#### Application Usage Tracking
+- **Fixed application tracking accuracy issues**
+  - Now tracks time continuously every second instead of only on app switches
+  - Fixed losing fractional seconds due to integer truncation
+  - Fixed first second of app focus being lost
+  - UWP apps now show actual app names from window titles instead of "ApplicationFrameHost"
+  - Changed from `DateTime.Now` to `DateTime.UtcNow` for consistent timing
+
+#### Database & Export Fixes
+- **Fixed database column mismatches in export**
+  - Corrected `key_count` vs `keystrokes` column names
+  - Fixed separate click columns (`left_clicks`, `right_clicks`, `middle_clicks`) vs combined `mouse_clicks`
+  - Fixed hourly_stats table INSERT/UPDATE operations using correct column names
+
+#### UI/UX Fixes
+- **Fixed table selection causing data disappearance**
+  - Removed data grid clearing when selecting rows
+  - Fixed infinite selection loop issue
+  - Charts now update without affecting table data
+
+- **Fixed monthly bar chart visualization**
+  - Now shows all days of the month (1-31) even without data
+  - Future days appear as empty bars for consistent month view
+  - Fixed bar charts not updating on row selection in Weekly/Monthly tabs
+
+- **Fixed Lifetime tab auto-refresh**
+  - Lifetime stats now refresh automatically when tab is selected
+  - Removed redundant "Refresh Lifetime Stats" button
+
+### 🎨 UI Improvements
+- **Cleaner startup experience**
+  - Removed debug "Application started successfully!" notification
+  
+- **Better chart responsiveness**
+  - Weekly/Monthly bar chart visualizations update when selecting different time periods
+  - Proper normalization of bar heights for better visual comparison
+
+### 🧪 Testing Improvements
+- **Enhanced test coverage**
+  - Added 8 comprehensive test cases for CSV export functionality
+  - Fixed async method warnings in test files (removed unnecessary `async` keywords)
+  - All 249 tests passing with 0 warnings
+
+### 🏗️ Code Quality
+- **Fixed compilation warnings**
+  - Resolved CS1998 warnings for async methods without await operators
+  - Clean build with 0 warnings and 0 errors
+
+### 📦 Technical Details
+- Updated version to 1.2.2 in all project files
+- Added `ExportTests.cs` with comprehensive export validation
+- Modified `LoadDailyDataAsync`, `LoadWeeklyDataAsync`, `LoadMonthlyDataAsync` to only update charts
+- Implemented partial methods for `OnSelectedDailyItemChanged`, `OnSelectedWeeklyItemChanged`, `OnSelectedMonthlyItemChanged`
+- Added `ExportToCsvAsync` method to DatabaseService
+- Added `ExportDataAsync` command to MainWindowViewModel
+
 ## [1.2.1] - 2025-08-10
 
 ### 🐛 Bug Fixes
